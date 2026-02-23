@@ -1,8 +1,6 @@
 "use client";
 
-import { X, Lightbulb, AlertTriangle, BookOpen, HelpCircle } from "lucide-react";
 import type { EcfrSection } from "@/lib/ecfr";
-import { clsx } from "clsx";
 
 interface Props {
   section: EcfrSection;
@@ -10,92 +8,151 @@ interface Props {
   onClose: () => void;
 }
 
-// Static placeholder insights — will be replaced with AI-generated content
-const INSIGHTS: Record<string, { type: "tip" | "warning" | "context" | "faq"; title: string; body: string }[]> = {
-  "390.5": [
-    {
-      type: "context",
-      title: "Why this section matters",
-      body: "§ 390.5 is the definitions section for Part 390, the general applicability rules. Understanding these definitions is critical because they apply throughout all FMCSRs.",
-    },
-    {
-      type: "tip",
-      title: "Commercial Motor Vehicle definition",
-      body: "The CMV definition includes weight thresholds (10,001 lbs GVWR), passenger counts (9+), and hazmat placarding. Know all three — inspectors use any of them.",
-    },
-    {
-      type: "warning",
-      title: "Driver vs. operator distinction",
-      body: "A 'driver' operates the vehicle; a 'motor carrier' controls the operation. Both carry distinct obligations under the FMCSRs. Misunderstanding this can create compliance gaps.",
-    },
-  ],
-};
+const guidance = [
+  {
+    eye: "FMCSA Interpretation",
+    title: "Interstate Commerce — Trip Intent Test",
+    body: "A carrier's operations are interstate even if both origin and destination are in the same state, provided the shipment is part of a continuous interstate movement.",
+    src: `§ 390.5(n) · fmcsa.dot.gov`,
+  },
+  {
+    eye: "FMCSA Interpretation",
+    title: "CMV Weight Threshold — GCWR vs. GVWR",
+    body: "When towing, use the higher of GCWR or GVWR. A vehicle below threshold alone may qualify as a CMV based on combined weight.",
+    src: `§ 390.5(b)(j)(k) · fmcsa.dot.gov`,
+  },
+  {
+    eye: "FMCSA Interpretation",
+    title: "Private Motor Carrier — For-Hire Test",
+    body: "A company is a private motor carrier when it transports its own goods. If it occasionally transports goods for others for compensation it may be reclassified as for-hire.",
+    src: `§ 390.5(u) · fmcsa.dot.gov`,
+  },
+];
 
-const iconMap = {
-  tip: { icon: Lightbulb, color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-200" },
-  warning: { icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50", border: "border-red-200" },
-  context: { icon: BookOpen, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200" },
-  faq: { icon: HelpCircle, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-200" },
-};
+const IPCard = ({ card }: { card: typeof guidance[0] }) => (
+  <div style={{
+    border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px",
+    marginBottom: 8, background: "var(--white)"
+  }}>
+    <div style={{
+      display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 6,
+      fontSize: 10, fontWeight: 600, color: "var(--blue)",
+      background: "var(--blue-bg)", border: "1px solid var(--blue-border)",
+      borderRadius: 4, padding: "2px 6px", letterSpacing: "0.05em"
+    }}>
+      <svg width="9" height="9" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      {card.eye}
+    </div>
+    <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)", marginBottom: 5, lineHeight: 1.35 }}>
+      {card.title}
+    </div>
+    <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.5, marginBottom: 8 }}>
+      {card.body}
+    </div>
+    <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text3)" }}>
+      <svg width="9" height="9" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/></svg>
+      {card.src}
+    </div>
+  </div>
+);
 
 export function InsightsPanel({ section, open, onClose }: Props) {
-  const insights = INSIGHTS[section.section] || [];
+  const [activeTab, setActiveTab] = useState<"guidance" | "videos" | "articles">("guidance");
 
   if (!open) return null;
 
   return (
-    <aside className="w-80 shrink-0 bg-white border-l border-stone-200 overflow-y-auto flex flex-col z-20">
+    <aside style={{
+      width: "var(--panel-w)", flexShrink: 0, background: "var(--white)",
+      borderLeft: "1px solid var(--border)", display: "flex",
+      flexDirection: "column", overflow: "hidden"
+    }}>
       {/* Header */}
-      <div className="h-14 flex items-center justify-between px-4 border-b border-stone-200 shrink-0">
-        <div className="flex items-center gap-2">
-          <Lightbulb size={16} className="text-amber-500" />
-          <span className="text-sm font-semibold text-stone-700">Insights</span>
+      <div style={{ padding: "14px 14px 0", flexShrink: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 10 }}>
+          § {section.section} Insights
         </div>
-        <button onClick={onClose} className="text-stone-400 hover:text-stone-700 transition-colors">
-          <X size={18} />
-        </button>
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)" }}>
+          {(["guidance", "videos", "articles"] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                padding: "6px 12px", border: "none", background: "transparent",
+                cursor: "pointer", fontSize: 12.5, fontWeight: activeTab === tab ? 600 : 400,
+                color: activeTab === tab ? "var(--accent)" : "var(--text3)",
+                borderBottom: activeTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
+                marginBottom: -1, textTransform: "capitalize", transition: "all 0.15s"
+              }}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Section label */}
-      <div className="px-4 py-3 border-b border-stone-100 bg-stone-50">
-        <p className="text-xs font-mono text-orange-600">§ {section.section}</p>
-        <p className="text-xs text-stone-500 mt-0.5 leading-snug">{section.title}</p>
-      </div>
-
-      {/* Insights */}
-      <div className="flex-1 p-4 space-y-3">
-        {insights.length > 0 ? (
-          insights.map((insight, i) => {
-            const { icon: Icon, color, bg, border } = iconMap[insight.type];
-            return (
-              <div key={i} className={clsx("rounded-xl border p-4", bg, border)}>
-                <div className="flex items-center gap-2 mb-2">
-                  <Icon size={14} className={color} />
-                  <span className={clsx("text-xs font-semibold", color)}>{insight.title}</span>
+      {/* Content */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 20px" }}>
+        {activeTab === "guidance" && (
+          <>
+            {guidance.map((card, i) => <IPCard key={i} card={card} />)}
+          </>
+        )}
+        {activeTab === "videos" && (
+          <div style={{ paddingTop: 4 }}>
+            {[
+              { title: "Are You a CMV? Understanding the Thresholds", duration: "9 min", color: "#1a2a3a" },
+              { title: "Interstate vs. Intrastate Commerce Explained", duration: "11 min", color: "#1a3a2e" },
+            ].map((v, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, marginBottom: 10, cursor: "pointer" }}>
+                <div style={{
+                  width: 72, height: 48, borderRadius: 6, flexShrink: 0,
+                  background: `linear-gradient(135deg, ${v.color}, var(--accent))`,
+                  display: "flex", alignItems: "center", justifyContent: "center"
+                }}>
+                  <div style={{
+                    width: 24, height: 24, borderRadius: "50%", background: "rgba(255,255,255,0.9)",
+                    display: "flex", alignItems: "center", justifyContent: "center"
+                  }}>
+                    <svg width="10" height="10" fill="var(--accent)" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  </div>
                 </div>
-                <p className="text-xs text-stone-700 leading-relaxed">{insight.body}</p>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text)", lineHeight: 1.35, marginBottom: 3 }}>{v.title}</div>
+                  <div style={{ fontSize: 11, color: "var(--text3)" }}>Trucksafe · {v.duration}</div>
+                </div>
               </div>
-            );
-          })
-        ) : (
-          <div className="text-center py-12">
-            <Lightbulb size={24} className="text-stone-300 mx-auto mb-3" />
-            <p className="text-sm text-stone-400">
-              No insights yet for § {section.section}.
-            </p>
-            <p className="text-xs text-stone-400 mt-1">
-              Trucksafe insights coming soon.
-            </p>
+            ))}
           </div>
+        )}
+        {activeTab === "articles" && (
+          <>
+            {[
+              { title: "Does the 10,001 lb. Rule Apply to Your Fleet?", meta: "Trucksafe · Nov 2025 · 7 min read" },
+              { title: "Private vs. For-Hire: Understanding Your Carrier Classification", meta: "Trucksafe · Sep 2025 · 5 min read" },
+            ].map((a, i) => (
+              <div key={i} style={{
+                border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px",
+                marginBottom: 8, cursor: "pointer"
+              }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)", lineHeight: 1.35, marginBottom: 6 }}>{a.title}</div>
+                <div style={{ fontSize: 11, color: "var(--text3)" }}>{a.meta}</div>
+              </div>
+            ))}
+          </>
         )}
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-stone-200 bg-stone-50">
-        <p className="text-[10px] text-stone-400 leading-snug">
-          Insights are provided by Trucksafe and do not constitute legal advice. Always verify with current eCFR text.
-        </p>
+      <div style={{ padding: "10px 14px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
+        <div style={{ fontSize: 10.5, color: "var(--text3)", lineHeight: 1.4 }}>
+          Insights are for informational purposes only and do not constitute legal advice.
+        </div>
       </div>
     </aside>
   );
 }
+
+// Need to import useState
+import { useState } from "react";

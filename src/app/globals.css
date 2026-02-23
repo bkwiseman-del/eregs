@@ -1,57 +1,42 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-serif: Georgia, "Times New Roman", serif;
-  --font-mono: "Courier New", Courier, monospace;
+:root {
+  --bg: #faf9f7;
+  --bg2: #f3f1ee;
+  --bg3: #eae7e2;
+  --white: #ffffff;
+  --border: #e5e1db;
+  --border2: #ccc8c0;
+  --text: #1a1814;
+  --text2: #58534d;
+  --text3: #9a948e;
+  --accent: #c96a2a;
+  --accent-bg: #fdf4ef;
+  --accent-border: #f0cdb4;
+  --accent-text: #a34f18;
+  --blue: #2563b0;
+  --blue-bg: #eff4fd;
+  --blue-border: #bdd0f5;
+  --green: #1a7a4a;
+  --green-bg: #eef8f3;
+  --green-border: #a8d8c0;
+  --nav-h: 52px;
+  --rail-w: 56px;
+  --panel-w: 296px;
 }
 
-/* Regulation reader typography */
-.prose-reg {
-  font-size: 15px;
-  line-height: 1.75;
-  color: #292524;
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100dvh;
+  overflow: hidden;
 }
 
-.prose-reg p {
-  margin-bottom: 1em;
-}
-
-.prose-reg strong {
-  font-weight: 600;
-  color: #1c1917;
-}
-
-.prose-reg em {
-  font-style: italic;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #d6d3d1;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #a8a29e;
-}
-
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
-}
-
-/* Focus styles */
-:focus-visible {
-  outline: 2px solid #ea580c;
-  outline-offset: 2px;
-}
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border2); }

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import type { EcfrSection, PartToc } from "@/lib/ecfr";
-import { ReaderNav } from "./ReaderNav";
+import { TopNav } from "./TopNav";
+import { NavRail } from "./NavRail";
 import { ReaderSidebar } from "./ReaderSidebar";
 import { ReaderContent } from "./ReaderContent";
 import { InsightsPanel } from "./InsightsPanel";
@@ -21,7 +22,7 @@ export function ReaderShell({ section, toc, adjacent, slug }: Props) {
 
   useEffect(() => {
     const check = () => {
-      const mobile = window.innerWidth < 768;
+      const mobile = window.innerWidth < 900;
       setIsMobile(mobile);
       if (mobile) setSidebarOpen(false);
     };
@@ -31,44 +32,56 @@ export function ReaderShell({ section, toc, adjacent, slug }: Props) {
   }, []);
 
   return (
-    <div className="flex h-screen bg-stone-50 overflow-hidden font-sans">
-      {/* Left nav rail */}
-      <ReaderNav
-        onToggleSidebar={() => setSidebarOpen((v) => !v)}
-        onToggleInsights={() => setInsightsOpen((v) => !v)}
-        sidebarOpen={sidebarOpen}
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <TopNav
+        section={section}
         insightsOpen={insightsOpen}
-        slug={slug}
-      />
-
-      {/* TOC Sidebar */}
-      <ReaderSidebar
-        toc={toc}
-        currentSection={section.section}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
+        onToggleInsights={() => setInsightsOpen(v => !v)}
+        onToggleSidebar={() => setSidebarOpen(v => !v)}
         isMobile={isMobile}
       />
 
-      {/* Mobile overlay */}
-      {isMobile && sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/40 z-20"
-          onClick={() => setSidebarOpen(false)}
+      {/* Shell: everything below the top nav */}
+      <div style={{
+        position: "fixed",
+        top: "var(--nav-h)", bottom: 0, left: 0, right: 0,
+        display: "flex", overflow: "hidden"
+      }}>
+        {/* Nav Rail — desktop only */}
+        {!isMobile && <NavRail />}
+
+        {/* TOC Sidebar */}
+        <ReaderSidebar
+          toc={toc}
+          currentSection={section.section}
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          isMobile={isMobile}
         />
-      )}
 
-      {/* Main content */}
-      <main className="flex-1 overflow-y-auto min-w-0">
-        <ReaderContent section={section} adjacent={adjacent} />
-      </main>
+        {/* Mobile overlay */}
+        {isMobile && sidebarOpen && (
+          <div
+            onClick={() => setSidebarOpen(false)}
+            style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
+              zIndex: 25, top: "var(--nav-h)"
+            }}
+          />
+        )}
 
-      {/* Insights panel */}
-      <InsightsPanel
-        section={section}
-        open={insightsOpen}
-        onClose={() => setInsightsOpen(false)}
-      />
+        {/* Main reading pane */}
+        <main style={{ flex: 1, overflowY: "auto", minWidth: 0, background: "var(--bg)" }}>
+          <ReaderContent section={section} adjacent={adjacent} />
+        </main>
+
+        {/* Insights panel */}
+        <InsightsPanel
+          section={section}
+          open={insightsOpen}
+          onClose={() => setInsightsOpen(false)}
+        />
+      </div>
     </div>
   );
 }
