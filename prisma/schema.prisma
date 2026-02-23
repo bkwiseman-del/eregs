@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── ACCOUNTS (Auth.js required tables) ───────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ── USERS ─────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  FLEET_ADMIN
+  SAFETY_MANAGER
+  THIRD_PARTY_ADMIN
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(FLEET_ADMIN)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  fleet         Fleet?
+}
+
+// ── FLEET ─────────────────────────────────────────────────────────────────────
+
+model Fleet {
+  id        String   @id @default(cuid())
+  name      String
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  drivers   Driver[]
+  tablets   Tablet[]
+}
+
+// ── DRIVERS ───────────────────────────────────────────────────────────────────
+
+enum DriverInviteMethod {
+  SMS
+  EMAIL
+}
+
+enum DriverStatus {
+  PENDING
+  ACKNOWLEDGED
+  REVOKED
+}
+
+model Driver {
+  id                     String             @id @default(cuid())
+  fleetId                String
+  name                   String
+  phone                  String?
+  email                  String?
+  inviteMethod           DriverInviteMethod
+  status                 DriverStatus       @default(PENDING)
+  inviteToken            String?            @unique
+  deviceToken            String?            @unique
+  acknowledgedAt         DateTime?
+  acknowledgedRegVersion String?
+  revokedAt              DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  fleet                  Fleet              @relation(fields: [fleetId], references: [id], onDelete: Cascade)
+  acknowledgements       Acknowledgement[]
+}
+
+// ── TABLETS ───────────────────────────────────────────────────────────────────
+
+model Tablet {
+  id           String   @id @default(cuid())
+  fleetId      String
+  deviceToken  String   @unique
+  unitNumber   String?
+  label        String?
+  registeredAt DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  fleet        Fleet    @relation(fields: [fleetId], references: [id], onDelete: Cascade)
+  acknowledgements Acknowledgement[]
+}
+
+// ── ACKNOWLEDGEMENTS ──────────────────────────────────────────────────────────
+
+enum AckDeviceType {
+  PERSONAL_DEVICE
+  SHARED_TABLET
+}
+
+model Acknowledgement {
+  id                String        @id @default(cuid())
+  driverName        String
+  driverPhone       String?
+  fleetId           String
+  driverId          String?
+  tabletId          String?
+  deviceType        AckDeviceType
+  deviceId          String
+  regVersion        String
+  partsAcknowledged String[]
+  ipAddress         String?
+  userAgent         String?
+  acknowledgedAt    DateTime      @default(now())
+
+  driver            Driver?       @relation(fields: [driverId], references: [id])
+  tablet            Tablet?       @relation(fields: [tabletId], references: [id])
+}
+
+// ── ANNOTATIONS ───────────────────────────────────────────────────────────────
+
+enum AnnotationType {
+  HIGHLIGHT
+  NOTE
+  BOOKMARK
+}
+
+model Annotation {
+  id          String         @id @default(cuid())
+  userId      String
+  type        AnnotationType
+  paragraphId String
+  part        String
+  section     String
+  note        String?        @db.Text
+  regVersion  String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
