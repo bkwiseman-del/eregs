@@ -32,16 +32,19 @@ export function NoteSheet({ open, onClose, onSave, onDelete, paragraphPreview, i
     <>
       {/* Overlay */}
       <div
+        className="note-sheet-overlay"
         onClick={onClose}
         style={{
           position: "fixed", inset: 0, zIndex: 400,
           background: "rgba(26, 24, 20, 0.4)",
           display: open ? "flex" : "none",
           alignItems: "flex-end",
+          justifyContent: "center",
         }}
       >
         {/* Sheet */}
         <div
+          className="note-sheet-card"
           onClick={(e) => e.stopPropagation()}
           style={{
             background: "var(--white)",
@@ -148,6 +151,22 @@ export function NoteSheet({ open, onClose, onSave, onDelete, paragraphPreview, i
         @keyframes noteSheetUp {
           from { transform: translateY(100%); }
           to { transform: translateY(0); }
+        }
+        @media (min-width: 900px) {
+          .note-sheet-overlay {
+            align-items: center !important;
+          }
+          .note-sheet-card {
+            max-width: 520px !important;
+            border-radius: 16px !important;
+            margin-bottom: 0 !important;
+            padding-bottom: 20px !important;
+            animation: noteSheetFade 0.2s ease !important;
+          }
+          @keyframes noteSheetFade {
+            from { opacity: 0; transform: scale(0.97) translateY(8px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+          }
         }
       `}</style>
     </>
