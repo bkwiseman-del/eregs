@@ -152,94 +152,76 @@ function parseXml(xml: string, part: string, section: string): EcfrSection | nul
   }
 }
 
-// Split a packed paragraph like "(b) Driving conditions —(1) Adverse driving..."
-// into [(b, "Driving conditions —"), (1, "Adverse driving...")]
-function splitPackedParagraph(text: string): { label: string | undefined; text: string }[] {
-  // Find all labeled sub-items embedded in the text
-  // Pattern: a label like (1), (a), (i) etc. preceded by at least 5 chars of text
-  const embeddedLabelRegex = /(.{5,}?)\s+(\([^)]{1,4}\))\s+/g;
+// CFR uses a strict 4-level hierarchy: (a)(1)(i)(A)
+// Ambiguous single chars: i, v, x, l, c, m could be level-1 letters OR level-3 roman numerals
+// Strategy: track the last seen label at each level to determine where a new label fits
+// Roman numerals only appear AFTER digits (level 2), never directly after letters (level 1)
 
-  // First check if the text itself starts with a label
-  const startsWithLabel = text.match(/^\(([^)]{1,4})\)\s*([\s\S]*)/);
-  if (!startsWithLabel) {
-    return [{ label: undefined, text }];
+const ROMANS = new Set(["i","ii","iii","iv","v","vi","vii","viii","ix","x","xi","xii","xiii","xiv","xv","xvi","xvii","xviii","xix","xx","xxi","xxii","xxiii","xxiv","xxv","l","c"]);
+const AMBIGUOUS_ROMANS = new Set(["i","v","x","l","c","m"]);
+
+function getLevelForLabel(label: string, lastAtLevel: Map<number, string>): number {
+  const isDigit = /^\d+$/.test(label);
+  const isUpper = /^[A-Z]/.test(label);
+  const isMultiRoman = ROMANS.has(label) && label.length > 1;
+  const isLower = /^[a-z]+$/.test(label);
+  const isAmbiguous = AMBIGUOUS_ROMANS.has(label);
+
+  if (isDigit) return 2;
+  if (isUpper) return 4;
+  if (isMultiRoman) return 3; // "ii", "iii", "iv" etc — unambiguously roman
+
+  if (isLower) {
+    if (!isAmbiguous) return 1; // f, g, h, j, k, n, o, p, q, r, s, t, u, w, y, z — never roman
+
+    // Ambiguous: i, v, x, l, c, m
+    // It's roman (level 3) only if we've already seen a digit (level 2) label
+    // i.e. romans appear inside numbered paragraphs, not directly inside lettered ones
+    const lastLevel2 = lastAtLevel.get(2);
+    const lastLevel3 = lastAtLevel.get(3);
+
+    if (lastLevel3) return 3; // already in a roman sequence
+    if (lastLevel2 && label === "i") return 3; // first roman after a digit
+    return 1; // otherwise it's just a letter (e.g. section (i) of a regulation)
   }
 
-  const outerLabel = startsWithLabel[1];
-  const rest = startsWithLabel[2];
-
-  // Look for an embedded sub-label in the rest
-  // Pattern: text ending with em-dash, colon, or just a natural break before a label
-  const innerLabelMatch = rest.match(/^(.*?(?:—|-{1,2}|:))\s*(\([^)]{1,4}\))\s+([\s\S]+)/);
-  if (innerLabelMatch) {
-    const intro = innerLabelMatch[1].trim();
-    const innerLabel = innerLabelMatch[2].slice(1, -1); // strip parens
-    const innerText = innerLabelMatch[3].trim();
-
-    return [
-      { label: outerLabel, text: intro || outerLabel },
-      { label: innerLabel, text: innerText },
-    ];
-  }
-
-  // No embedded label — return as single paragraph
-  return [{ label: outerLabel, text: rest }];
+  return 1;
 }
 
-// CFR paragraph label patterns in hierarchy order
-// Level 1: (a)-(z) single lowercase
-// Level 2: (1)-(99) digits  
-// Level 3: (i),(ii),(iii),(iv),(v),(vi)... roman numerals
-// Level 4: (A)-(Z) single uppercase
-// The ambiguity: (a-z) vs roman numerals like (i),(v),(x),(l),(c)
-// We resolve by tracking which labels have appeared at which level
+// Split paragraphs packed like "(a) General. (1) The rules..." or "(b) Foo —(1) Bar..."
+// into separate nodes: [(a, "General."), (1, "The rules...")]
+function splitPackedParagraph(text: string): { label: string | undefined; text: string }[] {
+  const outerMatch = text.match(/^\(([^)]{1,4})\)\s*(.*)/);
+  if (!outerMatch) return [{ label: undefined, text }];
 
-function getLevelForLabel(label: string, stack: Map<string, number>): number {
-  // Already seen this label — return its established level
-  if (stack.has(label)) return stack.get(label)!;
+  const outerLabel = outerMatch[1];
+  const rest = outerMatch[2];
 
-  // Determine candidate level by pattern
-  const isDigit = /^\d+$/.test(label);
-  const isUpper = /^[A-Z]+$/.test(label);
-  const isRoman = /^(i{1,3}|iv|vi{0,3}|ix|xi{0,3}|xiv|xv|xvi{0,3}|xix|xx|l|c)$/i.test(label);
-  const isLower = /^[a-z]$/.test(label);
+  // Look for embedded sub-label after em-dash, period+space, or colon
+  // e.g. "General. (1) The rules..." or "Driving conditions —(1) Adverse..."
+  const innerMatch = rest.match(/^(.*?(?:\.|—|:))\s*(\([^)]{1,4}\))\s+(.+)/);
+  if (innerMatch) {
+    const intro = innerMatch[1].trim();
+    const innerLabel = innerMatch[2].slice(1, -1);
+    const innerText = innerMatch[3].trim();
 
-  let level: number;
-  if (isDigit) {
-    level = 2;
-  } else if (isUpper) {
-    level = 4;
-  } else if (isRoman && !isLower) {
-    // Multi-char roman like "ii", "iii", "iv", "vi" — unambiguously roman
-    level = 3;
-  } else if (isLower) {
-    // Single char: could be (a)-(z) at level 1, or ambiguous romans (i),(v),(x),(l),(c)
-    // Check if level 1 is already established with a different letter
-    // If we've seen level-1 labels, check if this fits the sequence
-    const level1Labels = [...stack.entries()].filter(([,v]) => v === 1).map(([k]) => k);
-    const level3Labels = [...stack.entries()].filter(([,v]) => v === 3).map(([k]) => k);
-    
-    if (level3Labels.length > 0) {
-      // We're in a roman numeral sequence — treat as level 3
-      level = 3;
-    } else if (label === 'i' && level1Labels.length > 0 && !level1Labels.includes('i')) {
-      // (i) appearing after (a),(b),(c)... treat as roman numeral level 3
-      level = 3;
-    } else {
-      level = 1;
+    // Only split if intro is short (it's a title, not a full paragraph)
+    // Long intro text means the period is mid-sentence, not a title separator
+    if (intro.length < 80) {
+      return [
+        { label: outerLabel, text: intro },
+        { label: innerLabel, text: innerText },
+      ];
     }
-  } else {
-    level = 1;
   }
 
-  stack.set(label, level);
-  return level;
+  return [{ label: outerLabel, text: rest }];
 }
 
 function parseParagraphs(xml: string): EcfrNode[] {
   const nodes: EcfrNode[] = [];
   let counter = 0;
-  const levelStack = new Map<string, number>();
+  const lastAtLevel = new Map<number, string>(); // tracks last seen label at each level
 
   // Process content in document order by iterating through all relevant tags
   // We replace each tag with a placeholder then process in sequence
@@ -325,7 +307,8 @@ function parseParagraphs(xml: string): EcfrNode[] {
       const splitParagraphs = splitPackedParagraph(text);
 
       for (const { label, text: pText } of splitParagraphs) {
-        const level = label ? getLevelForLabel(label, levelStack) : 0;
+        const level = label ? getLevelForLabel(label, lastAtLevel) : 0;
+        if (label) lastAtLevel.set(level, label);
         nodes.push({ id: `p-${counter++}`, type: "paragraph", label, text: pText, level });
       }
     }
