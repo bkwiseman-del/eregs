@@ -246,18 +246,28 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   const [editingNote, setEditingNote] = useState<Annotation | null>(null);
   const [toastMsg, setToastMsg] = useState("");
   const [toastKey, setToastKey] = useState(0);
+  const localIdCounter = useRef(0);
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
     setToastKey(k => k + 1);
   }, []);
 
-  // Fetch annotations when section changes
+  // Generate a local ID for annotations created without API
+  const makeLocalId = () => `local-${++localIdCounter.current}-${Date.now()}`;
+
+  // Try to fetch annotations from API; if it fails (not logged in), start empty
   useEffect(() => {
     fetch(`/api/annotations?section=${currentSectionId}`)
-      .then(r => r.ok ? r.json() : [])
+      .then(r => {
+        if (!r.ok) throw new Error("not authed");
+        return r.json();
+      })
       .then(setAnnotations)
-      .catch(() => setAnnotations([]));
+      .catch(() => {
+        // Not logged in or API error — use local state only
+        setAnnotations([]);
+      });
   }, [currentSectionId]);
 
   // Clear selection when navigating
@@ -286,36 +296,49 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     );
   }, [selectedPids, annotations]);
 
-  // Highlight / Remove Highlight
+  // Highlight / Remove Highlight — local state first, then try API
   const handleHighlight = useCallback(async () => {
     const pids = [...selectedPids];
-    for (const pid of pids) {
-      try {
-        const res = await fetch("/api/annotations", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "HIGHLIGHT",
-            paragraphId: pid,
-            part: currentPart,
-            section: currentSectionId,
-            regVersion: "",
-          }),
-        });
-        const data = await res.json();
-        if (data.deleted) {
-          setAnnotations(prev => prev.filter(a => a.id !== data.id));
-        } else {
-          setAnnotations(prev => [...prev, data]);
-        }
-      } catch { /* silent */ }
+    const removing = allSelectedHighlighted;
+
+    // Immediately update local state
+    if (removing) {
+      setAnnotations(prev => prev.filter(a => !(pids.includes(a.paragraphId) && a.type === "HIGHLIGHT")));
+    } else {
+      const newAnnotations: Annotation[] = pids
+        .filter(pid => !annotations.some(a => a.paragraphId === pid && a.type === "HIGHLIGHT"))
+        .map(pid => ({
+          id: makeLocalId(),
+          type: "HIGHLIGHT" as const,
+          paragraphId: pid,
+          part: currentPart,
+          section: currentSectionId,
+          note: null,
+          regVersion: "",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }));
+      setAnnotations(prev => [...prev, ...newAnnotations]);
     }
-    const msg = allSelectedHighlighted
+
+    const msg = removing
       ? "Highlight removed"
       : `${pids.length === 1 ? "1 paragraph" : `${pids.length} paragraphs`} highlighted`;
     showToast(msg);
     clearSelection();
-  }, [selectedPids, currentPart, currentSectionId, allSelectedHighlighted, showToast, clearSelection]);
+
+    // Try API sync in background (fire and forget)
+    for (const pid of pids) {
+      fetch("/api/annotations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "HIGHLIGHT", paragraphId: pid,
+          part: currentPart, section: currentSectionId, regVersion: "",
+        }),
+      }).catch(() => {});
+    }
+  }, [selectedPids, currentPart, currentSectionId, allSelectedHighlighted, annotations, showToast, clearSelection]);
 
   // Open note sheet
   const handleOpenNote = useCallback(() => {
@@ -329,56 +352,66 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     setNoteSheetOpen(true);
   }, []);
 
-  // Save note
+  // Save note — local state first, then try API
   const handleSaveNote = useCallback(async (text: string) => {
     if (editingNote) {
-      // Update existing
-      try {
-        const res = await fetch("/api/annotations", {
+      // Update existing — local first
+      setAnnotations(prev => prev.map(a =>
+        a.id === editingNote.id ? { ...a, note: text, updatedAt: new Date().toISOString() } : a
+      ));
+      showToast("Note updated");
+
+      // Try API
+      if (!editingNote.id.startsWith("local-")) {
+        fetch("/api/annotations", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: editingNote.id, note: text }),
-        });
-        const updated = await res.json();
-        setAnnotations(prev => prev.map(a => a.id === updated.id ? updated : a));
-        showToast("Note updated");
-      } catch { /* silent */ }
-    } else {
-      // Create new note for each selected paragraph
-      const pids = [...selectedPids];
-      for (const pid of pids) {
-        try {
-          const res = await fetch("/api/annotations", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              type: "NOTE",
-              paragraphId: pid,
-              part: currentPart,
-              section: currentSectionId,
-              note: text,
-              regVersion: "",
-            }),
-          });
-          const data = await res.json();
-          if (!data.deleted) setAnnotations(prev => [...prev, data]);
-        } catch { /* silent */ }
+        }).catch(() => {});
       }
+    } else {
+      // Create new notes — local first
+      const pids = [...selectedPids];
+      const newAnnotations: Annotation[] = pids.map(pid => ({
+        id: makeLocalId(),
+        type: "NOTE" as const,
+        paragraphId: pid,
+        part: currentPart,
+        section: currentSectionId,
+        note: text,
+        regVersion: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+      setAnnotations(prev => [...prev, ...newAnnotations]);
       showToast("Note saved");
       clearSelection();
+
+      // Try API
+      for (const pid of pids) {
+        fetch("/api/annotations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "NOTE", paragraphId: pid,
+            part: currentPart, section: currentSectionId, note: text, regVersion: "",
+          }),
+        }).catch(() => {});
+      }
     }
     setNoteSheetOpen(false);
     setEditingNote(null);
   }, [editingNote, selectedPids, currentPart, currentSectionId, showToast, clearSelection]);
 
-  // Delete note
+  // Delete note — local first
   const handleDeleteNote = useCallback(async () => {
     if (!editingNote) return;
-    try {
-      await fetch(`/api/annotations?id=${editingNote.id}`, { method: "DELETE" });
-      setAnnotations(prev => prev.filter(a => a.id !== editingNote.id));
-      showToast("Note deleted");
-    } catch { /* silent */ }
+    setAnnotations(prev => prev.filter(a => a.id !== editingNote.id));
+    showToast("Note deleted");
+
+    if (!editingNote.id.startsWith("local-")) {
+      fetch(`/api/annotations?id=${editingNote.id}`, { method: "DELETE" }).catch(() => {});
+    }
     setNoteSheetOpen(false);
     setEditingNote(null);
   }, [editingNote, showToast]);
