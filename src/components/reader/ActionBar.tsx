@@ -85,8 +85,10 @@ export function ActionBar({
           display: "flex", justifyContent: "center",
           zIndex: 150,
           pointerEvents: "none",
-          transform: visible ? "translateY(0)" : "translateY(100%)",
-          transition: "transform 0.25s cubic-bezier(0.32, 0.72, 0, 1)",
+          transform: visible ? "translateY(0)" : "translateY(110%)",
+          opacity: visible ? 1 : 0,
+          visibility: visible ? "visible" as const : "hidden" as const,
+          transition: "transform 0.25s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s, visibility 0.25s",
         }}
       >
         <div
