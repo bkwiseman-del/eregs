@@ -2,11 +2,16 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { EcfrSection, PartToc } from "@/lib/ecfr";
+import type { Annotation } from "@/lib/annotations";
+import { makeParagraphId } from "@/lib/annotations";
 import { TopNav } from "./TopNav";
 import { NavRail } from "./NavRail";
 import { ReaderSidebar } from "./ReaderSidebar";
 import { ReaderContent } from "./ReaderContent";
 import { InsightsPanel } from "./InsightsPanel";
+import { ActionBar } from "./ActionBar";
+import { NoteSheet } from "./NoteSheet";
+import { Toast } from "./Toast";
 
 // ── DATA STORE ──────────────────────────────────────────────────────────────
 
@@ -233,6 +238,201 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     return map;
   }, [storeRevision]);
 
+  // ── ANNOTATIONS ─────────────────────────────────────────────────────────
+
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [selectedPids, setSelectedPids] = useState<Set<string>>(new Set());
+  const [noteSheetOpen, setNoteSheetOpen] = useState(false);
+  const [editingNote, setEditingNote] = useState<Annotation | null>(null);
+  const [toastMsg, setToastMsg] = useState("");
+  const [toastKey, setToastKey] = useState(0);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg);
+    setToastKey(k => k + 1);
+  }, []);
+
+  // Fetch annotations when section changes
+  useEffect(() => {
+    fetch(`/api/annotations?section=${currentSectionId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setAnnotations)
+      .catch(() => setAnnotations([]));
+  }, [currentSectionId]);
+
+  // Clear selection when navigating
+  useEffect(() => {
+    setSelectedPids(new Set());
+  }, [currentSectionId]);
+
+  const togglePara = useCallback((pid: string) => {
+    setSelectedPids(prev => {
+      const next = new Set(prev);
+      if (next.has(pid)) next.delete(pid);
+      else next.add(pid);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedPids(new Set());
+  }, []);
+
+  // Check if all selected paragraphs are highlighted
+  const allSelectedHighlighted = useMemo(() => {
+    if (selectedPids.size === 0) return false;
+    return [...selectedPids].every(pid =>
+      annotations.some(a => a.paragraphId === pid && a.type === "HIGHLIGHT")
+    );
+  }, [selectedPids, annotations]);
+
+  // Highlight / Remove Highlight
+  const handleHighlight = useCallback(async () => {
+    const pids = [...selectedPids];
+    for (const pid of pids) {
+      try {
+        const res = await fetch("/api/annotations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "HIGHLIGHT",
+            paragraphId: pid,
+            part: currentPart,
+            section: currentSectionId,
+            regVersion: "",
+          }),
+        });
+        const data = await res.json();
+        if (data.deleted) {
+          setAnnotations(prev => prev.filter(a => a.id !== data.id));
+        } else {
+          setAnnotations(prev => [...prev, data]);
+        }
+      } catch { /* silent */ }
+    }
+    const msg = allSelectedHighlighted
+      ? "Highlight removed"
+      : `${pids.length === 1 ? "1 paragraph" : `${pids.length} paragraphs`} highlighted`;
+    showToast(msg);
+    clearSelection();
+  }, [selectedPids, currentPart, currentSectionId, allSelectedHighlighted, showToast, clearSelection]);
+
+  // Open note sheet
+  const handleOpenNote = useCallback(() => {
+    setEditingNote(null);
+    setNoteSheetOpen(true);
+  }, []);
+
+  // Edit existing note
+  const handleEditNote = useCallback((annotation: Annotation) => {
+    setEditingNote(annotation);
+    setNoteSheetOpen(true);
+  }, []);
+
+  // Save note
+  const handleSaveNote = useCallback(async (text: string) => {
+    if (editingNote) {
+      // Update existing
+      try {
+        const res = await fetch("/api/annotations", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editingNote.id, note: text }),
+        });
+        const updated = await res.json();
+        setAnnotations(prev => prev.map(a => a.id === updated.id ? updated : a));
+        showToast("Note updated");
+      } catch { /* silent */ }
+    } else {
+      // Create new note for each selected paragraph
+      const pids = [...selectedPids];
+      for (const pid of pids) {
+        try {
+          const res = await fetch("/api/annotations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "NOTE",
+              paragraphId: pid,
+              part: currentPart,
+              section: currentSectionId,
+              note: text,
+              regVersion: "",
+            }),
+          });
+          const data = await res.json();
+          if (!data.deleted) setAnnotations(prev => [...prev, data]);
+        } catch { /* silent */ }
+      }
+      showToast("Note saved");
+      clearSelection();
+    }
+    setNoteSheetOpen(false);
+    setEditingNote(null);
+  }, [editingNote, selectedPids, currentPart, currentSectionId, showToast, clearSelection]);
+
+  // Delete note
+  const handleDeleteNote = useCallback(async () => {
+    if (!editingNote) return;
+    try {
+      await fetch(`/api/annotations?id=${editingNote.id}`, { method: "DELETE" });
+      setAnnotations(prev => prev.filter(a => a.id !== editingNote.id));
+      showToast("Note deleted");
+    } catch { /* silent */ }
+    setNoteSheetOpen(false);
+    setEditingNote(null);
+  }, [editingNote, showToast]);
+
+  // Copy with citation
+  const handleCopy = useCallback(() => {
+    const pids = [...selectedPids];
+    const blocks = pids.map(pid => {
+      const node = currentSection.content.find((n, i) =>
+        makeParagraphId(currentSectionId, n.label, i) === pid
+      );
+      if (!node) return "";
+      const label = node.label ? `(${node.label}) ` : "";
+      return `${label}${node.text}`;
+    }).filter(Boolean);
+
+    const text = blocks.join("\n\n");
+    const citation = `49 CFR § ${currentSectionId} — via eRegs (eregs.app/regs/${currentSectionId})`;
+    const output = `${text}\n\n${citation}`;
+
+    navigator.clipboard?.writeText(output).catch(() => {});
+    showToast("Copied with citation");
+    clearSelection();
+  }, [selectedPids, currentSection, currentSectionId, showToast, clearSelection]);
+
+  // Build paragraph preview for note sheet
+  const noteSheetPreview = useMemo(() => {
+    if (editingNote) {
+      const node = currentSection.content.find((n, i) =>
+        makeParagraphId(currentSectionId, n.label, i) === editingNote.paragraphId
+      );
+      return node ? `${node.label ? `(${node.label}) ` : ""}${node.text.slice(0, 80)}…` : "";
+    }
+    const pids = [...selectedPids];
+    return pids.map(pid => {
+      const node = currentSection.content.find((n, i) =>
+        makeParagraphId(currentSectionId, n.label, i) === pid
+      );
+      if (!node) return "";
+      const label = node.label ? `(${node.label}) — ` : "";
+      return label + node.text.slice(0, 60) + (node.text.length > 60 ? "…" : "");
+    }).join(" | ");
+  }, [selectedPids, editingNote, currentSection, currentSectionId]);
+
+  // Click outside to clear selection
+  const handleMainClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest("[data-para]") &&
+        !target.closest(".action-bar") &&
+        !target.closest(".note-bubble")) {
+      // Only clear if clicking on the main background, not on paragraphs
+    }
+  }, []);
+
   // ── Render ──────────────────────────────────────────────────────────────
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -272,7 +472,15 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         )}
 
         <main ref={mainRef} style={{ flex: 1, overflowY: "auto", minWidth: 0, background: "var(--bg)" }}>
-          <ReaderContent section={currentSection} adjacent={adjacent} onNavigate={navigateTo} />
+          <ReaderContent
+            section={currentSection}
+            adjacent={adjacent}
+            onNavigate={navigateTo}
+            annotations={annotations}
+            selectedPids={selectedPids}
+            onTogglePara={togglePara}
+            onEditNote={handleEditNote}
+          />
         </main>
 
         <InsightsPanel
@@ -281,6 +489,28 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
           onClose={() => setInsightsOpen(false)}
         />
       </div>
+
+      {/* Annotation UI overlays */}
+      <ActionBar
+        selectedCount={selectedPids.size}
+        allHighlighted={allSelectedHighlighted}
+        onHighlight={handleHighlight}
+        onNote={handleOpenNote}
+        onCopy={handleCopy}
+        onClear={clearSelection}
+      />
+
+      <NoteSheet
+        open={noteSheetOpen}
+        onClose={() => { setNoteSheetOpen(false); setEditingNote(null); }}
+        onSave={handleSaveNote}
+        onDelete={editingNote ? handleDeleteNote : undefined}
+        paragraphPreview={noteSheetPreview}
+        initialText={editingNote?.note || ""}
+        isEditing={!!editingNote}
+      />
+
+      <Toast message={toastMsg} visible={toastKey > 0} key={toastKey} />
     </div>
   );
 }

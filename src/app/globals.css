@@ -20,6 +20,12 @@
   --green: #1a7a4a;
   --green-bg: #eef8f3;
   --green-border: #a8d8c0;
+  --yellow-hl: rgba(253, 224, 71, 0.35);
+  --yellow-hl-border: rgba(202, 172, 20, 0.5);
+  --sel-color: rgba(201, 106, 42, 0.1);
+  --sel-border: rgba(201, 106, 42, 0.4);
+  --note-bg: #f0f5ff;
+  --note-border: #c0d4f8;
   --nav-h: 52px;
   --rail-w: 56px;
   --panel-w: 296px;
