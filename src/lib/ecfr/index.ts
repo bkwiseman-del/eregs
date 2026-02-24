@@ -1,25 +1,20 @@
-// eCFR API client
-// All FMCSR sections are under Title 49
-
 const ECFR_BASE = "https://www.ecfr.gov";
 const TITLE = "49";
 
-// Fetch the latest available date from eCFR for Title 49
-let _cachedDate: string | null = null;
+const FALLBACK_DATE = "2026-02-19";
+
 async function getLatestDate(): Promise<string> {
-  if (_cachedDate) return _cachedDate;
   try {
     const res = await fetch(`${ECFR_BASE}/api/versioner/v1/titles`, {
       next: { revalidate: 86400 },
     });
+    if (!res.ok) return FALLBACK_DATE;
     const data = await res.json();
     const title49 = data.titles?.find((t: any) => t.number === 49);
-    if (title49?.up_to_date_as_of) {
-      _cachedDate = title49.up_to_date_as_of;
-      return _cachedDate!;
-    }
-  } catch {}
-  return "2026-02-19"; // fallback
+    return title49?.up_to_date_as_of ?? FALLBACK_DATE;
+  } catch {
+    return FALLBACK_DATE;
+  }
 }
 
 export interface EcfrSection {
@@ -33,10 +28,16 @@ export interface EcfrSection {
 
 export interface EcfrNode {
   id: string;
+  type: "paragraph" | "table" | "image";
   label?: string;
   text: string;
-  children?: EcfrNode[];
   level: number;
+  // table-specific
+  tableHeaders?: string[];
+  tableRows?: string[][];
+  // image-specific
+  imageSrc?: string;
+  imageCaption?: string;
 }
 
 export interface TocEntry {
@@ -55,76 +56,83 @@ export interface PartToc {
 }
 
 export function parseSectionSlug(slug: string): { part: string; section: string } | null {
-  const match = slug.match(/^(\d+)\.(\S+)$/);
+  const match = slug.match(/^(\d+)\.(.+)$/);
   if (!match) return null;
   return { part: match[1], section: slug };
 }
 
-// Fetch TOC using the structure endpoint (full title, parse out just the part)
 export async function fetchPartStructure(part: string): Promise<PartToc | null> {
   try {
+    // Part-specific endpoint — small payload, no 2MB issue
     const res = await fetch(
-      `${ECFR_BASE}/api/versioner/v1/structure/current/title-${TITLE}.json`,
+      `${ECFR_BASE}/api/versioner/v1/structure/current/title-${TITLE}/part-${part}.json`,
       { next: { revalidate: 86400 } }
     );
     if (!res.ok) return null;
     const data = await res.json();
 
-    let partData: any = null;
-    function findPart(node: any) {
-      if (node.type === "part" && node.identifier === part) { partData = node; return; }
-      for (const child of node.children || []) findPart(child);
-    }
-    findPart(data);
-    if (!partData) return null;
-
+    // Part endpoint returns the part node as root — no tree traversal needed
     const subparts: PartToc["subparts"] = [];
     let currentSubpart = { label: "", title: "General", sections: [] as TocEntry[] };
 
     function processNode(node: any) {
       if (node.type === "subpart") {
         if (currentSubpart.sections.length > 0) subparts.push(currentSubpart);
-        currentSubpart = { label: node.identifier || "", title: node.label_description || "", sections: [] };
+        currentSubpart = {
+          label: node.identifier || "",
+          title: node.label_description || "",
+          sections: [],
+        };
         (node.children || []).forEach(processNode);
       } else if (node.type === "section") {
-        currentSubpart.sections.push({ section: node.identifier, title: node.label_description || node.label || "" });
+        currentSubpart.sections.push({
+          section: node.identifier,
+          title: node.label_description || node.label || "",
+        });
       } else {
         (node.children || []).forEach(processNode);
       }
     }
 
-    (partData.children || []).forEach(processNode);
+    (data.children || []).forEach(processNode);
     if (currentSubpart.sections.length > 0) subparts.push(currentSubpart);
 
-    return { part, title: partData.label_description || `Part ${part}`, subparts };
+    return {
+      part,
+      title: data.label_description || `Part ${part}`,
+      subparts,
+    };
   } catch (e) {
     console.error("fetchPartStructure error:", e);
     return null;
   }
 }
 
-// Fetch a section's XML content using the latest available date
 export async function fetchSection(part: string, section: string): Promise<EcfrSection | null> {
-  try {
-    const date = await getLatestDate();
-    const res = await fetch(
-      `${ECFR_BASE}/api/versioner/v1/full/${date}/title-${TITLE}.xml?part=${part}&section=${section}`,
-      { next: { revalidate: 3600 } }
-    );
-    if (!res.ok) return null;
-    const xml = await res.text();
-    return parseXml(xml, part, section);
-  } catch (e) {
-    console.error("fetchSection error:", e);
-    return null;
+  const date = await getLatestDate();
+  const url = `${ECFR_BASE}/api/versioner/v1/full/${date}/title-${TITLE}.xml?part=${part}&section=${section}`;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 600));
+      const res = await fetch(url, { next: { revalidate: 3600 } });
+      if (res.ok) {
+        const xml = await res.text();
+        return parseXml(xml, part, section);
+      }
+      console.warn(`fetchSection attempt ${attempt + 1} failed: ${res.status} for ${section}`);
+    } catch (e) {
+      console.error(`fetchSection attempt ${attempt + 1} error:`, e);
+    }
   }
+  return null;
 }
 
 function parseXml(xml: string, part: string, section: string): EcfrSection | null {
   try {
     const headMatch = xml.match(/<HEAD>([\s\S]*?)<\/HEAD>/);
     const heading = headMatch ? stripTags(headMatch[1]).trim() : "";
-    const title = heading.replace(/^§\s*[\d.]+\s*/, "").trim();
+    const title = heading.replace(/^§\s*[\d.]+[A-Z]?\s*/, "").trim();
 
     let subpartLabel: string | undefined;
     let subpartTitle: string | undefined;
@@ -144,34 +152,151 @@ function parseXml(xml: string, part: string, section: string): EcfrSection | nul
   }
 }
 
+// CFR paragraph label patterns in hierarchy order
+// Level 1: (a)-(z) single lowercase
+// Level 2: (1)-(99) digits  
+// Level 3: (i),(ii),(iii),(iv),(v),(vi)... roman numerals
+// Level 4: (A)-(Z) single uppercase
+// The ambiguity: (a-z) vs roman numerals like (i),(v),(x),(l),(c)
+// We resolve by tracking which labels have appeared at which level
+
+function getLevelForLabel(label: string, stack: Map<string, number>): number {
+  // Already seen this label — return its established level
+  if (stack.has(label)) return stack.get(label)!;
+
+  // Determine candidate level by pattern
+  const isDigit = /^\d+$/.test(label);
+  const isUpper = /^[A-Z]+$/.test(label);
+  const isRoman = /^(i{1,3}|iv|vi{0,3}|ix|xi{0,3}|xiv|xv|xvi{0,3}|xix|xx|l|c)$/i.test(label);
+  const isLower = /^[a-z]$/.test(label);
+
+  let level: number;
+  if (isDigit) {
+    level = 2;
+  } else if (isUpper) {
+    level = 4;
+  } else if (isRoman && !isLower) {
+    // Multi-char roman like "ii", "iii", "iv", "vi" — unambiguously roman
+    level = 3;
+  } else if (isLower) {
+    // Single char: could be (a)-(z) at level 1, or ambiguous romans (i),(v),(x),(l),(c)
+    // Check if level 1 is already established with a different letter
+    // If we've seen level-1 labels, check if this fits the sequence
+    const level1Labels = [...stack.entries()].filter(([,v]) => v === 1).map(([k]) => k);
+    const level3Labels = [...stack.entries()].filter(([,v]) => v === 3).map(([k]) => k);
+    
+    if (level3Labels.length > 0) {
+      // We're in a roman numeral sequence — treat as level 3
+      level = 3;
+    } else if (label === 'i' && level1Labels.length > 0 && !level1Labels.includes('i')) {
+      // (i) appearing after (a),(b),(c)... treat as roman numeral level 3
+      level = 3;
+    } else {
+      level = 1;
+    }
+  } else {
+    level = 1;
+  }
+
+  stack.set(label, level);
+  return level;
+}
+
 function parseParagraphs(xml: string): EcfrNode[] {
   const nodes: EcfrNode[] = [];
   let counter = 0;
+  const levelStack = new Map<string, number>();
 
-  const pRegex = /<P>([\s\S]*?)<\/P>/g;
-  let match;
-  while ((match = pRegex.exec(xml)) !== null) {
-    const text = stripTags(match[1]).trim();
-    if (!text || text.length < 3) continue;
+  // Process content in document order by iterating through all relevant tags
+  // We replace each tag with a placeholder then process in sequence
+  const tagRegex = /<(P|GPOTABLE|img)([^>]*)>([\s\S]*?)<\/(?:P|GPOTABLE)>|<img([^>]*)\/?>|<img([^>]*)>/gi;
 
-    const labelMatch = text.match(/^\(([^)]{1,4})\)\s*/);
-    const label = labelMatch ? labelMatch[1] : undefined;
-    const content = labelMatch ? text.slice(labelMatch[0].length) : text;
+  // Instead, process the section body linearly
+  // Extract the section body (everything inside the section div)
+  const bodyMatch = xml.match(/<DIV8[^>]*>([\s\S]*)<\/DIV8>/);
+  const body = bodyMatch ? bodyMatch[1] : xml;
 
-    let level = 0;
-    if (label) {
-      if (/^[a-z]$/.test(label)) level = 1;
-      else if (/^\d+$/.test(label)) level = 2;
-      else if (/^[ivxlc]+$/.test(label)) level = 3;
-      else if (/^[A-Z]$/.test(label)) level = 4;
+  // Split into chunks by tag boundaries we care about
+  // Process GPOTABLE, img, and P tags in order
+  const chunkRegex = /(<GPOTABLE[\s\S]*?<\/GPOTABLE>|<img[^>]*\/?>|<P>[\s\S]*?<\/P>)/gi;
+  const chunks = body.match(chunkRegex) || [];
+
+  for (const chunk of chunks) {
+    // TABLE
+    if (chunk.startsWith("<GPOTABLE") || chunk.startsWith("<gpotable")) {
+      const headers: string[] = [];
+      const rows: string[][] = [];
+
+      // Parse BOXHD headers
+      const boxhdMatch = chunk.match(/<BOXHD>([\s\S]*?)<\/BOXHD>/i);
+      if (boxhdMatch) {
+        const chedRegex = /<CHED[^>]*>([\s\S]*?)<\/CHED>/gi;
+        let chedMatch;
+        while ((chedMatch = chedRegex.exec(boxhdMatch[1])) !== null) {
+          headers.push(stripTags(chedMatch[1]).trim());
+        }
+      }
+
+      // Parse ROW entries
+      const rowRegex = /<ROW>([\s\S]*?)<\/ROW>/gi;
+      let rowMatch;
+      while ((rowMatch = rowRegex.exec(chunk)) !== null) {
+        const cells: string[] = [];
+        const entRegex = /<ENT[^>]*>([\s\S]*?)<\/ENT>/gi;
+        let entMatch;
+        while ((entMatch = entRegex.exec(rowMatch[1])) !== null) {
+          cells.push(stripTags(entMatch[1]).trim());
+        }
+        if (cells.length) rows.push(cells);
+      }
+
+      if (headers.length || rows.length) {
+        nodes.push({
+          id: `t-${counter++}`,
+          type: "table",
+          text: "",
+          level: 0,
+          tableHeaders: headers,
+          tableRows: rows,
+        });
+      }
+      continue;
     }
 
-    nodes.push({ id: `p-${counter++}`, label, text: content, level });
+    // IMAGE
+    if (chunk.toLowerCase().startsWith("<img")) {
+      const srcMatch = chunk.match(/src=["']([^"']+)["']/i);
+      if (srcMatch) {
+        // Also look for a preceding TCAP caption
+        nodes.push({
+          id: `img-${counter++}`,
+          type: "image",
+          text: "",
+          level: 0,
+          imageSrc: srcMatch[1],
+        });
+      }
+      continue;
+    }
+
+    // PARAGRAPH
+    if (chunk.startsWith("<P>") || chunk.startsWith("<p>")) {
+      const inner = chunk.replace(/^<P>/i, "").replace(/<\/P>$/i, "");
+      const text = stripTags(inner).trim();
+      if (!text || text.length < 3) continue;
+
+      const labelMatch = text.match(/^\(([^)]{1,4})\)\s*/);
+      const label = labelMatch ? labelMatch[1] : undefined;
+      const content = labelMatch ? text.slice(labelMatch[0].length) : text;
+
+      const level = label ? getLevelForLabel(label, levelStack) : 0;
+      nodes.push({ id: `p-${counter++}`, type: "paragraph", label, text: content, level });
+    }
   }
 
   if (nodes.length === 0) {
     const text = stripTags(xml).trim();
-    if (text) nodes.push({ id: "p-0", text, level: 0 });
+    if (text) nodes.push({ id: "p-0", type: "paragraph", text, level: 0 });
   }
 
   return nodes;
