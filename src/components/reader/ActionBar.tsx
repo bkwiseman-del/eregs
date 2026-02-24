@@ -13,18 +13,31 @@ export function ActionBar({ selectedCount, allHighlighted, onHighlight, onNote, 
   const visible = selectedCount > 0;
 
   return (
-    <div style={{
-      position: "fixed",
-      bottom: 0, left: 0, right: 0,
-      background: "var(--white)",
-      borderTop: "1px solid var(--border)",
-      padding: "10px 16px",
-      paddingBottom: "calc(10px + env(safe-area-inset-bottom, 0px))",
-      zIndex: 150,
-      transform: visible ? "translateY(0)" : "translateY(100%)",
-      transition: "transform 0.25s cubic-bezier(0.32, 0.72, 0, 1)",
-      boxShadow: "0 -4px 24px rgba(0,0,0,0.08)",
-    }}>
+    <>
+      <div
+        className="action-bar-outer"
+        style={{
+          position: "fixed",
+          bottom: 0, left: 0, right: 0,
+          display: "flex", justifyContent: "center",
+          zIndex: 150,
+          pointerEvents: "none",
+          transform: visible ? "translateY(0)" : "translateY(100%)",
+          transition: "transform 0.25s cubic-bezier(0.32, 0.72, 0, 1)",
+        }}
+      >
+        <div
+          className="action-bar-inner"
+          style={{
+            width: "100%",
+            background: "var(--white)",
+            borderTop: "1px solid var(--border)",
+            padding: "10px 16px",
+            paddingBottom: "calc(10px + env(safe-area-inset-bottom, 0px))",
+            boxShadow: "0 -4px 24px rgba(0,0,0,0.08)",
+            pointerEvents: "auto",
+          }}
+        >
       {/* Selection info */}
       <div style={{
         fontSize: 12, color: "var(--text3)", marginBottom: 10,
@@ -122,6 +135,24 @@ export function ActionBar({ selectedCount, allHighlighted, onHighlight, onNote, 
           </svg>
         </button>
       </div>
-    </div>
+        </div>
+      </div>
+
+      {/* Responsive: on desktop, float as a card; on mobile, full-width */}
+      <style>{`
+        @media (min-width: 900px) {
+          .action-bar-outer {
+            bottom: 16px !important;
+            padding: 0 24px;
+          }
+          .action-bar-inner {
+            max-width: 680px;
+            border-radius: 14px !important;
+            border: 1px solid var(--border) !important;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.12) !important;
+          }
+        }
+      `}</style>
+    </>
   );
 }
