@@ -57,12 +57,9 @@ function renderNode(node: EcfrNode) {
 
   // IMAGE
   if (node.type === "image") {
-    // eCFR image paths are relative — prefix with ecfr.gov
-    // Route through our proxy to avoid CORS/hotlink blocking from ecfr.gov
-    const rawSrc = node.imageSrc?.startsWith("http")
+    const src = node.imageSrc?.startsWith("http")
       ? node.imageSrc
       : `https://www.ecfr.gov${node.imageSrc}`;
-    const src = `/api/ecfr-image?url=${encodeURIComponent(rawSrc)}`;
     return (
       <div key={node.id} style={{ margin: "20px 0", textAlign: "center" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -70,6 +67,7 @@ function renderNode(node: EcfrNode) {
           src={src}
           alt={node.imageCaption || "Regulatory diagram"}
           style={{ maxWidth: "100%", height: "auto", border: "1px solid var(--border)", borderRadius: 4 }}
+          loading="lazy"
         />
         {node.imageCaption && (
           <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 6, fontStyle: "italic" }}>
