@@ -255,84 +255,85 @@ async function fetchPartStructureFromEcfr(part: string): Promise<PartToc | null>
   }
 }
 
-// ── SYNC ALL SECTIONS (called by cron) ───────────────────────────────────────
+// ── SYNC (called by cron) ────────────────────────────────────────────────────
 
 const FMCSR_PARTS = [
   "40","376","380","381","382","383","385","386","387",
   "390","391","392","393","394","395","396","397","398","399"
 ];
 
-export async function syncAllRegulations(): Promise<{ sections: number; parts: number; errors: string[] }> {
+// Helper to fetch title structure and find a part within it
+async function fetchTitleStructure(): Promise<any> {
   const date = await getLatestDate();
-  const errors: string[] = [];
-  let sectionCount = 0;
-  let partCount = 0;
+  const res = await fetch(
+    `${ECFR_BASE}/api/versioner/v1/structure/${date}/title-${TITLE}.json`,
+    { cache: 'no-store' }
+  );
+  if (!res.ok) throw new Error(`Structure fetch failed: HTTP ${res.status}`);
+  return res.json();
+}
 
-  // Fetch the full title structure ONCE
-  let titleStructure: any;
-  try {
-    const res = await fetch(
-      `${ECFR_BASE}/api/versioner/v1/structure/${date}/title-${TITLE}.json`,
-      { cache: 'no-store' }
-    );
-    if (!res.ok) {
-      return { sections: 0, parts: 0, errors: [`Failed to fetch title structure: HTTP ${res.status}`] };
-    }
-    titleStructure = await res.json();
-  } catch (e) {
-    return { sections: 0, parts: 0, errors: [`Failed to fetch title structure: ${e}`] };
-  }
-
-  // Find all target parts within the structure
-  function findPart(node: any, targetPart: string): any {
+function findPartInStructure(titleData: any, targetPart: string): any {
+  function find(node: any): any {
     if (node.type === "part" && node.identifier === targetPart) return node;
     for (const child of (node.children || [])) {
-      const found = findPart(child, targetPart);
+      const found = find(child);
       if (found) return found;
     }
     return null;
   }
+  return find(titleData);
+}
+
+function buildTocFromPartNode(partNode: any, part: string): PartToc {
+  const subparts: PartToc["subparts"] = [];
+  let currentSubpart = { label: "", title: "General", sections: [] as TocEntry[] };
+
+  function processNode(node: any) {
+    if (node.type === "subpart") {
+      if (currentSubpart.sections.length > 0) subparts.push(currentSubpart);
+      currentSubpart = {
+        label: node.identifier || "",
+        title: node.label_description || "",
+        sections: [],
+      };
+      (node.children || []).forEach(processNode);
+    } else if (node.type === "section") {
+      currentSubpart.sections.push({
+        section: node.identifier,
+        title: node.label_description || node.label || "",
+      });
+    } else {
+      (node.children || []).forEach(processNode);
+    }
+  }
+
+  (partNode.children || []).forEach(processNode);
+  if (currentSubpart.sections.length > 0) subparts.push(currentSubpart);
+
+  return {
+    part,
+    title: partNode.label_description || `Part ${part}`,
+    subparts,
+  };
+}
+
+// Step 1: Sync all TOCs (fast — one API call, writes ~19 rows)
+export async function syncStructure(): Promise<{ parts: number; errors: string[] }> {
+  const date = await getLatestDate();
+  const errors: string[] = [];
+  let partCount = 0;
+
+  const titleData = await fetchTitleStructure();
 
   for (const part of FMCSR_PARTS) {
-    const partNode = findPart(titleStructure, part);
+    const partNode = findPartInStructure(titleData, part);
     if (!partNode) {
-      errors.push(`Part ${part} not found in title structure`);
+      errors.push(`Part ${part} not found in structure`);
       continue;
     }
 
-    // Build TOC from the part node
-    const subparts: PartToc["subparts"] = [];
-    let currentSubpart = { label: "", title: "General", sections: [] as TocEntry[] };
-
-    function processNode(node: any) {
-      if (node.type === "subpart") {
-        if (currentSubpart.sections.length > 0) subparts.push(currentSubpart);
-        currentSubpart = {
-          label: node.identifier || "",
-          title: node.label_description || "",
-          sections: [],
-        };
-        (node.children || []).forEach(processNode);
-      } else if (node.type === "section") {
-        currentSubpart.sections.push({
-          section: node.identifier,
-          title: node.label_description || node.label || "",
-        });
-      } else {
-        (node.children || []).forEach(processNode);
-      }
-    }
-
-    (partNode.children || []).forEach(processNode);
-    if (currentSubpart.sections.length > 0) subparts.push(currentSubpart);
-
-    const toc: PartToc = {
-      part,
-      title: partNode.label_description || `Part ${part}`,
-      subparts,
-    };
-
-    // Cache the TOC
+    const toc = buildTocFromPartNode(partNode, part);
     try {
       await db.cachedPartToc.upsert({
         where: { part },
@@ -341,52 +342,66 @@ export async function syncAllRegulations(): Promise<{ sections: number; parts: n
       });
       partCount++;
     } catch (e) {
-      errors.push(`TOC cache write failed for part ${part}: ${e}`);
-    }
-
-    // Fetch and cache each section
-    const allSections = toc.subparts.flatMap(sp => sp.sections);
-    for (const sec of allSections) {
-      try {
-        const url = `${ECFR_BASE}/api/versioner/v1/full/${date}/title-${TITLE}.xml?part=${part}&section=${sec.section}`;
-        const res = await fetch(url, { cache: 'no-store' });
-        if (!res.ok) {
-          errors.push(`HTTP ${res.status} for ${sec.section}`);
-          continue;
-        }
-        const xml = await res.text();
-        const parsed = parseXml(xml, part, sec.section);
-        if (!parsed) {
-          errors.push(`Parse failed for ${sec.section}`);
-          continue;
-        }
-
-        await db.cachedSection.upsert({
-          where: { section: sec.section },
-          create: {
-            part, section: sec.section, title: parsed.title,
-            contentJson: JSON.stringify(parsed.content),
-            subpartLabel: parsed.subpartLabel ?? null,
-            subpartTitle: parsed.subpartTitle ?? null,
-            ecfrVersion: date, rawXml: xml,
-          },
-          update: {
-            title: parsed.title,
-            contentJson: JSON.stringify(parsed.content),
-            subpartLabel: parsed.subpartLabel ?? null,
-            subpartTitle: parsed.subpartTitle ?? null,
-            ecfrVersion: date, rawXml: xml,
-          },
-        });
-        sectionCount++;
-        await new Promise(r => setTimeout(r, 200));
-      } catch (e) {
-        errors.push(`Error caching ${sec.section}: ${e}`);
-      }
+      errors.push(`TOC write failed for part ${part}: ${e}`);
     }
   }
 
-  return { sections: sectionCount, parts: partCount, errors };
+  return { parts: partCount, errors };
+}
+
+// Step 2: Sync all sections for one part
+export async function syncPart(part: string): Promise<{ sections: number; errors: string[] }> {
+  const date = await getLatestDate();
+  const errors: string[] = [];
+  let sectionCount = 0;
+
+  // Get the TOC for this part (from cache or fresh)
+  const toc = await fetchPartStructure(part);
+  if (!toc) {
+    return { sections: 0, errors: [`Could not get TOC for part ${part}`] };
+  }
+
+  const allSections = toc.subparts.flatMap(sp => sp.sections);
+  for (const sec of allSections) {
+    try {
+      const url = `${ECFR_BASE}/api/versioner/v1/full/${date}/title-${TITLE}.xml?part=${part}&section=${sec.section}`;
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) {
+        errors.push(`HTTP ${res.status} for ${sec.section}`);
+        continue;
+      }
+      const xml = await res.text();
+      const parsed = parseXml(xml, part, sec.section);
+      if (!parsed) {
+        errors.push(`Parse failed for ${sec.section}`);
+        continue;
+      }
+
+      await db.cachedSection.upsert({
+        where: { section: sec.section },
+        create: {
+          part, section: sec.section, title: parsed.title,
+          contentJson: JSON.stringify(parsed.content),
+          subpartLabel: parsed.subpartLabel ?? null,
+          subpartTitle: parsed.subpartTitle ?? null,
+          ecfrVersion: date, rawXml: xml,
+        },
+        update: {
+          title: parsed.title,
+          contentJson: JSON.stringify(parsed.content),
+          subpartLabel: parsed.subpartLabel ?? null,
+          subpartTitle: parsed.subpartTitle ?? null,
+          ecfrVersion: date, rawXml: xml,
+        },
+      });
+      sectionCount++;
+      await new Promise(r => setTimeout(r, 150));
+    } catch (e) {
+      errors.push(`Error caching ${sec.section}: ${e}`);
+    }
+  }
+
+  return { sections: sectionCount, errors };
 }
 
 // ── XML PARSING ──────────────────────────────────────────────────────────────

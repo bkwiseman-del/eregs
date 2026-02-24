@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { syncAllRegulations } from "@/lib/ecfr";
+import { syncPart, syncStructure } from "@/lib/ecfr";
 
-// This route can be called by:
-// 1. Vercel Cron (add to vercel.json)
-// 2. Manual trigger: POST /api/cron/sync-regs with the secret
-// 3. External cron service (e.g. cron-job.org)
+// Sync one part at a time to stay within Vercel timeout limits.
+// Usage:
+//   POST /api/cron/sync-regs?step=structure   — sync all TOCs (fast, ~5s)
+//   POST /api/cron/sync-regs?step=part&part=390  — sync one part's sections
+//
+// To sync everything, run structure first, then each part.
 
-export const maxDuration = 300; // 5 minutes — Vercel Pro limit
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
-  // Verify authorization
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
 
@@ -17,25 +18,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const step = request.nextUrl.searchParams.get("step") || "structure";
+  const part = request.nextUrl.searchParams.get("part");
+
   try {
-    console.log("[sync-regs] Starting regulation sync...");
-    const result = await syncAllRegulations();
-    console.log(`[sync-regs] Done: ${result.sections} sections, ${result.parts} parts, ${result.errors.length} errors`);
+    if (step === "structure") {
+      const result = await syncStructure();
+      return NextResponse.json({ success: true, ...result });
+    }
+
+    if (step === "part" && part) {
+      const result = await syncPart(part);
+      return NextResponse.json({ success: true, ...result });
+    }
 
     return NextResponse.json({
-      success: true,
-      sections: result.sections,
-      parts: result.parts,
-      errors: result.errors.slice(0, 20), // Limit error output
-      totalErrors: result.errors.length,
-    });
+      error: "Invalid params. Use ?step=structure or ?step=part&part=390",
+    }, { status: 400 });
   } catch (e) {
-    console.error("[sync-regs] Fatal error:", e);
+    console.error("[sync-regs] Error:", e);
     return NextResponse.json({ error: "Sync failed", details: String(e) }, { status: 500 });
   }
 }
 
-// Also support GET for Vercel Cron (which sends GET requests)
 export async function GET(request: NextRequest) {
   return POST(request);
 }
