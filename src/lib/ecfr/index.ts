@@ -194,12 +194,32 @@ function getLevelForLabel(label: string, lastAtLevel: Map<number, string>): numb
   // Uppercase letters are always level 4
   if (isUpper) return 4;
 
-  // Multi-char roman numerals (ii, iii, iv, etc.) — check if we're in deep nesting
+  // Multi-char roman numerals (ii, iii, iv, etc.) — check nesting context
   if (isMultiRoman) {
-    // If we're after an uppercase (level 4) + digit (level 5), this is level 6
+    const lastLevel3 = lastAtLevel.get(3);
     const lastLevel5 = lastAtLevel.get(5);
     const lastLevel6 = lastAtLevel.get(6);
+    const romanOrder = ["i","ii","iii","iv","v","vi","vii","viii","ix","x","xi","xii","xiii","xiv","xv","xvi","xvii","xviii","xix","xx"];
+    
+    // Check level-6 predecessor first (deeper nesting takes priority)
+    // e.g. (A)(1)(i)(ii) — (ii) follows (i) at level 6
+    if (lastLevel6 && ROMANS.has(lastLevel6)) {
+      const prevIdx = romanOrder.indexOf(lastLevel6);
+      const curIdx = romanOrder.indexOf(label);
+      if (prevIdx >= 0 && curIdx > prevIdx) return 6;
+    }
+    
+    // Check level-3 predecessor
+    // e.g. (i)(ii)(A)-(D)(1)(2)(iii) — (iii) follows (ii) at level 3
+    if (lastLevel3 && ROMANS.has(lastLevel3)) {
+      const prevIdx = romanOrder.indexOf(lastLevel3);
+      const curIdx = romanOrder.indexOf(label);
+      if (prevIdx >= 0 && curIdx > prevIdx) return 3;
+    }
+    
+    // In deep nesting but no predecessor match — start level 6
     if (lastLevel5 || lastLevel6) return 6;
+    
     return 3;
   }
 
@@ -207,8 +227,6 @@ function getLevelForLabel(label: string, lastAtLevel: Map<number, string>): numb
   if (isDigit) {
     const lastLevel4 = lastAtLevel.get(4);
     const lastLevel5 = lastAtLevel.get(5);
-    // If we've seen an uppercase letter (level 4) and haven't reset back to level 1,
-    // this digit is level 5 (nested under the uppercase)
     if (lastLevel4 || lastLevel5) return 5;
     return 2;
   }
