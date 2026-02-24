@@ -198,12 +198,26 @@ async function fetchSectionFromEcfr(part: string, section: string): Promise<Ecfr
 
 async function fetchPartStructureFromEcfr(part: string): Promise<PartToc | null> {
   try {
+    const date = await getLatestDate();
     const res = await fetch(
-      `${ECFR_BASE}/api/versioner/v1/structure/current/title-${TITLE}/part-${part}.json`,
+      `${ECFR_BASE}/api/versioner/v1/structure/${date}/title-${TITLE}.json`,
       { next: { revalidate: 86400 } }
     );
     if (!res.ok) return null;
     const data = await res.json();
+
+    // Find the target part within the full title structure
+    function findPart(node: any): any {
+      if (node.type === "part" && node.identifier === part) return node;
+      for (const child of (node.children || [])) {
+        const found = findPart(child);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    const partNode = findPart(data);
+    if (!partNode) return null;
 
     const subparts: PartToc["subparts"] = [];
     let currentSubpart = { label: "", title: "General", sections: [] as TocEntry[] };
@@ -227,12 +241,12 @@ async function fetchPartStructureFromEcfr(part: string): Promise<PartToc | null>
       }
     }
 
-    (data.children || []).forEach(processNode);
+    (partNode.children || []).forEach(processNode);
     if (currentSubpart.sections.length > 0) subparts.push(currentSubpart);
 
     return {
       part,
-      title: data.label_description || `Part ${part}`,
+      title: partNode.label_description || `Part ${part}`,
       subparts,
     };
   } catch (e) {
@@ -254,13 +268,71 @@ export async function syncAllRegulations(): Promise<{ sections: number; parts: n
   let sectionCount = 0;
   let partCount = 0;
 
+  // Fetch the full title structure ONCE
+  let titleStructure: any;
+  try {
+    const res = await fetch(
+      `${ECFR_BASE}/api/versioner/v1/structure/${date}/title-${TITLE}.json`,
+      { cache: 'no-store' }
+    );
+    if (!res.ok) {
+      return { sections: 0, parts: 0, errors: [`Failed to fetch title structure: HTTP ${res.status}`] };
+    }
+    titleStructure = await res.json();
+  } catch (e) {
+    return { sections: 0, parts: 0, errors: [`Failed to fetch title structure: ${e}`] };
+  }
+
+  // Find all target parts within the structure
+  function findPart(node: any, targetPart: string): any {
+    if (node.type === "part" && node.identifier === targetPart) return node;
+    for (const child of (node.children || [])) {
+      const found = findPart(child, targetPart);
+      if (found) return found;
+    }
+    return null;
+  }
+
   for (const part of FMCSR_PARTS) {
-    const toc = await fetchPartStructureFromEcfr(part);
-    if (!toc) {
-      errors.push(`Failed to fetch TOC for part ${part}`);
+    const partNode = findPart(titleStructure, part);
+    if (!partNode) {
+      errors.push(`Part ${part} not found in title structure`);
       continue;
     }
 
+    // Build TOC from the part node
+    const subparts: PartToc["subparts"] = [];
+    let currentSubpart = { label: "", title: "General", sections: [] as TocEntry[] };
+
+    function processNode(node: any) {
+      if (node.type === "subpart") {
+        if (currentSubpart.sections.length > 0) subparts.push(currentSubpart);
+        currentSubpart = {
+          label: node.identifier || "",
+          title: node.label_description || "",
+          sections: [],
+        };
+        (node.children || []).forEach(processNode);
+      } else if (node.type === "section") {
+        currentSubpart.sections.push({
+          section: node.identifier,
+          title: node.label_description || node.label || "",
+        });
+      } else {
+        (node.children || []).forEach(processNode);
+      }
+    }
+
+    (partNode.children || []).forEach(processNode);
+    if (currentSubpart.sections.length > 0) subparts.push(currentSubpart);
+
+    const toc: PartToc = {
+      part,
+      title: partNode.label_description || `Part ${part}`,
+      subparts,
+    };
+
+    // Cache the TOC
     try {
       await db.cachedPartToc.upsert({
         where: { part },
@@ -272,6 +344,7 @@ export async function syncAllRegulations(): Promise<{ sections: number; parts: n
       errors.push(`TOC cache write failed for part ${part}: ${e}`);
     }
 
+    // Fetch and cache each section
     const allSections = toc.subparts.flatMap(sp => sp.sections);
     for (const sec of allSections) {
       try {
