@@ -160,6 +160,35 @@ function parseXml(xml: string, part: string, section: string): EcfrSection | nul
 const ROMANS = new Set(["i","ii","iii","iv","v","vi","vii","viii","ix","x","xi","xii","xiii","xiv","xv","xvi","xvii","xviii","xix","xx","xxi","xxii","xxiii","xxiv","xxv","l","c"]);
 const AMBIGUOUS_ROMANS = new Set(["i","v","x","l","c","m"]);
 
+// Check if label is the next letter in sequence after the given letter
+function isNextLetter(label: string, after: string): boolean {
+  if (label.length !== 1 || after.length !== 1) return false;
+  return label.charCodeAt(0) === after.charCodeAt(0) + 1;
+}
+
+// Check if a label naturally continues the level-1 letter sequence
+// Only applies when the most recent label at level 1 is a direct predecessor
+// AND we're not currently inside a digit sub-sequence (level 2 is more recent than level 1)
+function continuesLevel1Sequence(label: string, lastAtLevel: Map<number, string>): boolean {
+  const lastLevel1 = lastAtLevel.get(1);
+  if (!lastLevel1) return false;
+  if (label.length !== 1 || lastLevel1.length !== 1) return false;
+  
+  // Only treat as level-1 continuation if label follows alphabetically from last level-1
+  // AND we're not currently nested under a digit (level 2)
+  // When level 2 exists, ambiguous labels should be checked as potential romans
+  const lastLevel2 = lastAtLevel.get(2);
+  if (lastLevel2) {
+    // We're inside a numbered sub-sequence. Only return true for direct successor
+    // if the label is NOT a plausible roman start (i.e., not "i" after a digit)
+    // Actually: if level 2 exists, that means we're nested. Don't claim level 1.
+    return false;
+  }
+  
+  // No active level-2, so this is a plain level-1 letter sequence
+  return label.charCodeAt(0) > lastLevel1.charCodeAt(0);
+}
+
 function getLevelForLabel(label: string, lastAtLevel: Map<number, string>): number {
   const isDigit = /^\d+$/.test(label);
   const isUpper = /^[A-Z]/.test(label);
@@ -175,6 +204,10 @@ function getLevelForLabel(label: string, lastAtLevel: Map<number, string>): numb
     if (!isAmbiguous) return 1; // f, g, h, j, k, n, o, p, q, r, s, t, u, w, y, z — never roman
 
     // Ambiguous: i, v, x, l, c, m
+    // First check: does this label naturally continue the level-1 letter sequence?
+    // e.g. last level-1 was (k), and this is (l) → definitely level 1, not roman "L"
+    if (continuesLevel1Sequence(label, lastAtLevel)) return 1;
+
     // It's roman (level 3) only if we've already seen a digit (level 2) label
     // i.e. romans appear inside numbered paragraphs, not directly inside lettered ones
     const lastLevel2 = lastAtLevel.get(2);
@@ -190,28 +223,57 @@ function getLevelForLabel(label: string, lastAtLevel: Map<number, string>): numb
 
 // Split paragraphs packed like "(a) General. (1) The rules..." or "(b) Foo —(1) Bar..."
 // into separate nodes: [(a, "General."), (1, "The rules...")]
+// Also handles: "(g)(1) Property-carrying —(i) General —(ii) Specific..."
 function splitPackedParagraph(text: string): { label: string | undefined; text: string }[] {
   const outerMatch = text.match(/^\(([^)]{1,4})\)\s*(.*)/);
   if (!outerMatch) return [{ label: undefined, text }];
 
-  const outerLabel = outerMatch[1];
+  const outerLabel = outerMatch[1].trim();
   const rest = outerMatch[2];
 
-  // Look for embedded sub-label after em-dash, period+space, or colon
+  // First check: two labels packed at the start like "(g)(1) text"
+  // This must be checked BEFORE the inner-match pattern
+  const doubleMatch = rest.match(/^\(([^)]{1,4})\)\s+(.*)/);
+  if (doubleMatch) {
+    const secondLabel = doubleMatch[1].trim();
+    const secondText = doubleMatch[2].trim();
+    
+    // Only split if the outer label looks like a letter and second looks like a number/roman
+    // This handles "(g)(1) Property-carrying..." → [(g, ""), (1, "Property-carrying...")]
+    const outerIsLetter = /^[a-z]$/.test(outerLabel);
+    const secondIsDigitOrRoman = /^\d+$/.test(secondLabel) || /^[ivxlc]+$/i.test(secondLabel);
+    
+    if (outerIsLetter && secondIsDigitOrRoman) {
+      const result: { label: string | undefined; text: string }[] = [
+        { label: outerLabel, text: "" },
+      ];
+      // Recursively split the rest
+      const innerFull = `(${secondLabel}) ${secondText}`;
+      result.push(...splitPackedParagraph(innerFull));
+      return result;
+    }
+  }
+
+  // Second check: embedded sub-label after em-dash, period+space, colon, or semicolon
   // e.g. "General. (1) The rules..." or "Driving conditions —(1) Adverse..."
-  const innerMatch = rest.match(/^(.*?(?:\.|—|:))\s*(\([^)]{1,4}\))\s+(.+)/);
+  // Also handle em-dash directly before paren: "Property-carrying —(i) General"
+  const innerMatch = rest.match(/^(.*?(?:\.|—|:|;))\s*(\([^)]{1,4}\))\s+(.+)/);
   if (innerMatch) {
-    const intro = innerMatch[1].trim();
-    const innerLabel = innerMatch[2].slice(1, -1);
+    const intro = innerMatch[1].trim().replace(/[—:;]\s*$/, '').trim();
+    const innerLabel = innerMatch[2].slice(1, -1).trim();
     const innerText = innerMatch[3].trim();
 
     // Only split if intro is short (it's a title, not a full paragraph)
     // Long intro text means the period is mid-sentence, not a title separator
     if (intro.length < 80) {
-      return [
+      const result: { label: string | undefined; text: string }[] = [
         { label: outerLabel, text: intro },
-        { label: innerLabel, text: innerText },
       ];
+      // Recursively split the inner text in case there are more packed sub-labels
+      // e.g. "(i) General —(ii) Specific..."
+      const innerFull = `(${innerLabel}) ${innerText}`;
+      result.push(...splitPackedParagraph(innerFull));
+      return result;
     }
   }
 
@@ -306,9 +368,24 @@ function parseParagraphs(xml: string): EcfrNode[] {
       // becomes two nodes: (b) intro + (1) content
       const splitParagraphs = splitPackedParagraph(text);
 
-      for (const { label, text: pText } of splitParagraphs) {
+      for (const { label: rawLabel, text: pText } of splitParagraphs) {
+        const label = rawLabel?.trim(); // Fix labels with leading spaces like " 1"
         const level = label ? getLevelForLabel(label, lastAtLevel) : 0;
-        if (label) lastAtLevel.set(level, label);
+        if (label) {
+          // When a new level-1 label appears, reset sub-level tracking
+          // This prevents stale roman numeral entries from misclassifying
+          // later ambiguous labels like (l), (v), (x) as roman numerals
+          if (level === 1) {
+            lastAtLevel.delete(2);
+            lastAtLevel.delete(3);
+            lastAtLevel.delete(4);
+          } else if (level === 2) {
+            // New digit sequence — reset roman and uppercase tracking
+            lastAtLevel.delete(3);
+            lastAtLevel.delete(4);
+          }
+          lastAtLevel.set(level, label);
+        }
         nodes.push({ id: `p-${counter++}`, type: "paragraph", label, text: pText, level });
       }
     }
