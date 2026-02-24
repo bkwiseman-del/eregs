@@ -112,10 +112,15 @@ export async function fetchSection(part: string, section: string): Promise<EcfrS
   const date = await getLatestDate();
   const url = `${ECFR_BASE}/api/versioner/v1/full/${date}/title-${TITLE}.xml?part=${part}&section=${section}`;
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // 5 attempts with increasing backoff to handle cold starts and slow eCFR responses
+  for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 600));
-      const res = await fetch(url, { next: { revalidate: 3600 } });
+      if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 800));
+      // Use cache: 'no-store' on retries to bypass potentially stale cache
+      const fetchOpts = attempt === 0
+        ? { next: { revalidate: 3600 } }
+        : { cache: 'no-store' as const };
+      const res = await fetch(url, fetchOpts);
       if (res.ok) {
         const xml = await res.text();
         return parseXml(xml, part, section);
@@ -152,10 +157,10 @@ function parseXml(xml: string, part: string, section: string): EcfrSection | nul
   }
 }
 
-// CFR uses a strict 4-level hierarchy: (a)(1)(i)(A)
+// CFR uses a recursive hierarchy: (a)(1)(i)(A)(1)(i)...
+// The pattern repeats: lowercase letter → digit → roman → uppercase letter → digit → roman...
+// We track nesting depth to assign the correct level.
 // Ambiguous single chars: i, v, x, l, c, m could be level-1 letters OR level-3 roman numerals
-// Strategy: track the last seen label at each level to determine where a new label fits
-// Roman numerals only appear AFTER digits (level 2), never directly after letters (level 1)
 
 const ROMANS = new Set(["i","ii","iii","iv","v","vi","vii","viii","ix","x","xi","xii","xiii","xiv","xv","xvi","xvii","xviii","xix","xx","xxi","xxii","xxiii","xxiv","xxv","l","c"]);
 const AMBIGUOUS_ROMANS = new Set(["i","v","x","l","c","m"]);
@@ -167,25 +172,15 @@ function isNextLetter(label: string, after: string): boolean {
 }
 
 // Check if a label naturally continues the level-1 letter sequence
-// Only applies when the most recent label at level 1 is a direct predecessor
-// AND we're not currently inside a digit sub-sequence (level 2 is more recent than level 1)
+// Only applies when we're not currently inside a digit sub-sequence
 function continuesLevel1Sequence(label: string, lastAtLevel: Map<number, string>): boolean {
   const lastLevel1 = lastAtLevel.get(1);
   if (!lastLevel1) return false;
   if (label.length !== 1 || lastLevel1.length !== 1) return false;
   
-  // Only treat as level-1 continuation if label follows alphabetically from last level-1
-  // AND we're not currently nested under a digit (level 2)
-  // When level 2 exists, ambiguous labels should be checked as potential romans
   const lastLevel2 = lastAtLevel.get(2);
-  if (lastLevel2) {
-    // We're inside a numbered sub-sequence. Only return true for direct successor
-    // if the label is NOT a plausible roman start (i.e., not "i" after a digit)
-    // Actually: if level 2 exists, that means we're nested. Don't claim level 1.
-    return false;
-  }
+  if (lastLevel2) return false; // nested under a digit — don't claim level 1
   
-  // No active level-2, so this is a plain level-1 letter sequence
   return label.charCodeAt(0) > lastLevel1.charCodeAt(0);
 }
 
@@ -196,26 +191,47 @@ function getLevelForLabel(label: string, lastAtLevel: Map<number, string>): numb
   const isLower = /^[a-z]+$/.test(label);
   const isAmbiguous = AMBIGUOUS_ROMANS.has(label);
 
-  if (isDigit) return 2;
+  // Uppercase letters are always level 4
   if (isUpper) return 4;
-  if (isMultiRoman) return 3; // "ii", "iii", "iv" etc — unambiguously roman
+
+  // Multi-char roman numerals (ii, iii, iv, etc.) — check if we're in deep nesting
+  if (isMultiRoman) {
+    // If we're after an uppercase (level 4) + digit (level 5), this is level 6
+    const lastLevel5 = lastAtLevel.get(5);
+    const lastLevel6 = lastAtLevel.get(6);
+    if (lastLevel5 || lastLevel6) return 6;
+    return 3;
+  }
+
+  // Digits — could be level 2 (under letters) or level 5 (under uppercase)
+  if (isDigit) {
+    const lastLevel4 = lastAtLevel.get(4);
+    const lastLevel5 = lastAtLevel.get(5);
+    // If we've seen an uppercase letter (level 4) and haven't reset back to level 1,
+    // this digit is level 5 (nested under the uppercase)
+    if (lastLevel4 || lastLevel5) return 5;
+    return 2;
+  }
 
   if (isLower) {
-    if (!isAmbiguous) return 1; // f, g, h, j, k, n, o, p, q, r, s, t, u, w, y, z — never roman
+    if (!isAmbiguous) return 1;
 
     // Ambiguous: i, v, x, l, c, m
-    // First check: does this label naturally continue the level-1 letter sequence?
-    // e.g. last level-1 was (k), and this is (l) → definitely level 1, not roman "L"
     if (continuesLevel1Sequence(label, lastAtLevel)) return 1;
 
-    // It's roman (level 3) only if we've already seen a digit (level 2) label
-    // i.e. romans appear inside numbered paragraphs, not directly inside lettered ones
+    // Check for deep nesting: level 6 roman (under level 5 digit, under level 4 uppercase)
+    const lastLevel5 = lastAtLevel.get(5);
+    const lastLevel6 = lastAtLevel.get(6);
+    if (lastLevel5 && label === "i") return 6;
+    if (lastLevel6) return 6;
+
+    // Standard level 3 roman check
     const lastLevel2 = lastAtLevel.get(2);
     const lastLevel3 = lastAtLevel.get(3);
 
-    if (lastLevel3) return 3; // already in a roman sequence
-    if (lastLevel2 && label === "i") return 3; // first roman after a digit
-    return 1; // otherwise it's just a letter (e.g. section (i) of a regulation)
+    if (lastLevel3) return 3;
+    if (lastLevel2 && label === "i") return 3;
+    return 1;
   }
 
   return 1;
@@ -299,8 +315,9 @@ function parseParagraphs(xml: string): EcfrNode[] {
   const body = bodyMatch ? bodyMatch[1] : xml;
 
   // Split into chunks by tag boundaries we care about
-  // Process GPOTABLE, img, and P tags in order
-  const chunkRegex = /(<GPOTABLE[\s\S]*?<\/GPOTABLE>|<img[^>]*\/?>|<P>[\s\S]*?<\/P>)/gi;
+  // Process GPOTABLE, img, GPH (graphic), EXTRACT, and P tags in order
+  // eCFR uses GPH+GID for images, not <img> directly
+  const chunkRegex = /(<GPOTABLE[\s\S]*?<\/GPOTABLE>|<GPH[\s\S]*?<\/GPH>|<EXTRACT[\s\S]*?<\/EXTRACT>|<img[^>]*\/?>|<P>[\s\S]*?<\/P>|<FP[^>]*>[\s\S]*?<\/FP>)/gi;
   const chunks = body.match(chunkRegex) || [];
 
   for (const chunk of chunks) {
@@ -345,11 +362,10 @@ function parseParagraphs(xml: string): EcfrNode[] {
       continue;
     }
 
-    // IMAGE
+    // IMAGE — <img> tag
     if (chunk.toLowerCase().startsWith("<img")) {
       const srcMatch = chunk.match(/src=["']([^"']+)["']/i);
       if (srcMatch) {
-        // Also look for a preceding TCAP caption
         nodes.push({
           id: `img-${counter++}`,
           type: "image",
@@ -357,6 +373,55 @@ function parseParagraphs(xml: string): EcfrNode[] {
           level: 0,
           imageSrc: srcMatch[1],
         });
+      }
+      continue;
+    }
+
+    // IMAGE — <GPH> (Graphic) tag used by eCFR for embedded images
+    if (chunk.toUpperCase().startsWith("<GPH")) {
+      const gidMatch = chunk.match(/<GID>([\s\S]*?)<\/GID>/i);
+      if (gidMatch) {
+        const filename = gidMatch[1].trim();
+        // eCFR graphic filenames resolve to their graphics server
+        const src = filename.startsWith("http") ? filename : `/graphics/${filename}`;
+        nodes.push({
+          id: `img-${counter++}`,
+          type: "image",
+          text: "",
+          level: 0,
+          imageSrc: src,
+        });
+      }
+      continue;
+    }
+
+    // EXTRACT — blockquote-like content, treat inner <P> tags as paragraphs
+    if (chunk.toUpperCase().startsWith("<EXTRACT")) {
+      const innerPs = chunk.match(/<P>[\s\S]*?<\/P>/gi) || [];
+      for (const p of innerPs) {
+        const inner = p.replace(/^<P>/i, "").replace(/<\/P>$/i, "");
+        const text = stripTags(inner).trim();
+        if (!text || text.length < 3) continue;
+        nodes.push({ id: `p-${counter++}`, type: "paragraph", text, level: 0 });
+      }
+      continue;
+    }
+
+    // FP (Flush Paragraph) — used for notes, authorities, source citations
+    if (chunk.toUpperCase().startsWith("<FP")) {
+      const inner = chunk.replace(/^<FP[^>]*>/i, "").replace(/<\/FP>$/i, "");
+      const text = stripTags(inner).trim();
+      if (!text || text.length < 3) continue;
+
+      const splitParagraphs = splitPackedParagraph(text);
+      for (const { label: rawLabel, text: pText } of splitParagraphs) {
+        const label = rawLabel?.trim();
+        const level = label ? getLevelForLabel(label, lastAtLevel) : 0;
+        if (label) {
+          for (let l = level + 1; l <= 6; l++) lastAtLevel.delete(l);
+          lastAtLevel.set(level, label);
+        }
+        nodes.push({ id: `p-${counter++}`, type: "paragraph", label, text: pText, level });
       }
       continue;
     }
@@ -376,17 +441,10 @@ function parseParagraphs(xml: string): EcfrNode[] {
         const label = rawLabel?.trim(); // Fix labels with leading spaces like " 1"
         const level = label ? getLevelForLabel(label, lastAtLevel) : 0;
         if (label) {
-          // When a new level-1 label appears, reset sub-level tracking
-          // This prevents stale roman numeral entries from misclassifying
-          // later ambiguous labels like (l), (v), (x) as roman numerals
-          if (level === 1) {
-            lastAtLevel.delete(2);
-            lastAtLevel.delete(3);
-            lastAtLevel.delete(4);
-          } else if (level === 2) {
-            // New digit sequence — reset roman and uppercase tracking
-            lastAtLevel.delete(3);
-            lastAtLevel.delete(4);
+          // When a label appears at level N, reset all deeper levels
+          // This prevents stale entries from misclassifying later labels
+          for (let l = level + 1; l <= 6; l++) {
+            lastAtLevel.delete(l);
           }
           lastAtLevel.set(level, label);
         }

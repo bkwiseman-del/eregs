@@ -7,8 +7,8 @@ interface Props {
 }
 
 function renderNode(node: EcfrNode) {
-  const indentMap = [0, 24, 48, 72, 96];
-  const indent = indentMap[Math.min(node.level, 4)];
+  const indentMap = [0, 24, 48, 72, 96, 120, 144];
+  const indent = indentMap[Math.min(node.level, 6)];
   const isTopLevel = node.level === 1;
 
   // TABLE
