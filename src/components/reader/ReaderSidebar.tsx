@@ -40,12 +40,37 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, on
   // Track which part is expanded — defaults to the current part
   const [expandedPart, setExpandedPart] = useState<string | null>(currentPart);
 
+  // Cache of fetched TOCs keyed by part number
+  const [tocCache, setTocCache] = useState<Map<string, PartToc>>(new Map());
+
+  // Seed cache with the server-provided TOC for the current part
+  useEffect(() => {
+    if (toc && !tocCache.has(toc.part)) {
+      setTocCache(prev => new Map(prev).set(toc.part, toc));
+    }
+  }, [toc]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Sync expanded part when navigating to a different part
   useEffect(() => {
     setExpandedPart(currentPart);
   }, [currentPart]);
 
-  // Always derive the active subpart from current section — don't store in state
+  // Fetch TOC when expanding a part we don't have yet
+  useEffect(() => {
+    if (!expandedPart) return;
+    if (tocCache.has(expandedPart)) return;
+    fetch(`/api/part-toc?part=${expandedPart}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: PartToc | null) => {
+        if (data) setTocCache(prev => new Map(prev).set(expandedPart, data));
+      })
+      .catch(() => {});
+  }, [expandedPart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Get TOC for the expanded part
+  const expandedToc = expandedPart ? tocCache.get(expandedPart) ?? null : null;
+
+  // Always derive the active subpart from current section
   const activeSubpartLabel = toc?.subparts.find(sp =>
     sp.sections.some(s => s.section === currentSection)
   )?.label ?? null;
@@ -152,10 +177,12 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, on
                   </div>
                 </button>
 
-                {isExpanded && toc && isCurrentPart && (
+                {isExpanded && expandedToc && (
                   <div style={{ paddingBottom: 4 }}>
-                    {toc.subparts.map((subpart) => {
-                      const expanded = isSubpartExpanded(subpart.label);
+                    {expandedToc.subparts.map((subpart) => {
+                      const expanded = isCurrentPart
+                        ? isSubpartExpanded(subpart.label)
+                        : true; // Non-current parts: show all subparts expanded
                       const hasActive = subpart.sections.some(s => s.section === currentSection);
                       return (
                         <div key={subpart.label}>
@@ -189,11 +216,13 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, on
                                 key={sec.section}
                                 href={`/regs/${sec.section}`}
                                 onClick={(e) => {
-                                  if (onNavigate) {
+                                  const secPart = sec.section.split(".")[0];
+                                  if (onNavigate && secPart === currentPart) {
                                     e.preventDefault();
                                     onNavigate(sec.section);
                                     if (isMobile) onClose();
                                   }
+                                  // For other parts, let the <a> do a full navigation
                                 }}
                                 style={{ textDecoration: "none" }}
                               >
