@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getServerSession } from "next-auth";
+import { auth } from "@/lib/auth";
 
 // GET /api/annotations?section=395.1
 // Returns all annotations for the authenticated user in a given section
 export async function GET(request: NextRequest) {
-  const session = await getServerSession();
+  const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 // POST /api/annotations
 // Body: { type, paragraphId, part, section, note?, regVersion }
 export async function POST(request: NextRequest) {
-  const session = await getServerSession();
+  const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
 // DELETE /api/annotations?id=xxx
 export async function DELETE(request: NextRequest) {
-  const session = await getServerSession();
+  const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -114,7 +114,7 @@ export async function DELETE(request: NextRequest) {
 // PATCH /api/annotations
 // Body: { id, note }
 export async function PATCH(request: NextRequest) {
-  const session = await getServerSession();
+  const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
