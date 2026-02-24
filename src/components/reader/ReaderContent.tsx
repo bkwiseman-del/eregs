@@ -58,9 +58,11 @@ function renderNode(node: EcfrNode) {
   // IMAGE
   if (node.type === "image") {
     // eCFR image paths are relative — prefix with ecfr.gov
-    const src = node.imageSrc?.startsWith("http")
+    // Route through our proxy to avoid CORS/hotlink blocking from ecfr.gov
+    const rawSrc = node.imageSrc?.startsWith("http")
       ? node.imageSrc
       : `https://www.ecfr.gov${node.imageSrc}`;
+    const src = `/api/ecfr-image?url=${encodeURIComponent(rawSrc)}`;
     return (
       <div key={node.id} style={{ margin: "20px 0", textAlign: "center" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}

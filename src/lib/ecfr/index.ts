@@ -152,6 +152,40 @@ function parseXml(xml: string, part: string, section: string): EcfrSection | nul
   }
 }
 
+// Split a packed paragraph like "(b) Driving conditions —(1) Adverse driving..."
+// into [(b, "Driving conditions —"), (1, "Adverse driving...")]
+function splitPackedParagraph(text: string): { label: string | undefined; text: string }[] {
+  // Find all labeled sub-items embedded in the text
+  // Pattern: a label like (1), (a), (i) etc. preceded by at least 5 chars of text
+  const embeddedLabelRegex = /(.{5,}?)\s+(\([^)]{1,4}\))\s+/g;
+
+  // First check if the text itself starts with a label
+  const startsWithLabel = text.match(/^\(([^)]{1,4})\)\s*(.*)/s);
+  if (!startsWithLabel) {
+    return [{ label: undefined, text }];
+  }
+
+  const outerLabel = startsWithLabel[1];
+  const rest = startsWithLabel[2];
+
+  // Look for an embedded sub-label in the rest
+  // Pattern: text ending with em-dash, colon, or just a natural break before a label
+  const innerLabelMatch = rest.match(/^(.*?(?:—|-{1,2}|:))\s*(\([^)]{1,4}\))\s+(.+)/s);
+  if (innerLabelMatch) {
+    const intro = innerLabelMatch[1].trim();
+    const innerLabel = innerLabelMatch[2].slice(1, -1); // strip parens
+    const innerText = innerLabelMatch[3].trim();
+
+    return [
+      { label: outerLabel, text: intro || outerLabel },
+      { label: innerLabel, text: innerText },
+    ];
+  }
+
+  // No embedded label — return as single paragraph
+  return [{ label: outerLabel, text: rest }];
+}
+
 // CFR paragraph label patterns in hierarchy order
 // Level 1: (a)-(z) single lowercase
 // Level 2: (1)-(99) digits  
@@ -285,12 +319,15 @@ function parseParagraphs(xml: string): EcfrNode[] {
       const text = stripTags(inner).trim();
       if (!text || text.length < 3) continue;
 
-      const labelMatch = text.match(/^\(([^)]{1,4})\)\s*/);
-      const label = labelMatch ? labelMatch[1] : undefined;
-      const content = labelMatch ? text.slice(labelMatch[0].length) : text;
+      // Split paragraphs that pack multiple labeled items into one <P>
+      // e.g. "(b) Driving conditions —(1) Adverse driving conditions. Some text..."
+      // becomes two nodes: (b) intro + (1) content
+      const splitParagraphs = splitPackedParagraph(text);
 
-      const level = label ? getLevelForLabel(label, levelStack) : 0;
-      nodes.push({ id: `p-${counter++}`, type: "paragraph", label, text: content, level });
+      for (const { label, text: pText } of splitParagraphs) {
+        const level = label ? getLevelForLabel(label, levelStack) : 0;
+        nodes.push({ id: `p-${counter++}`, type: "paragraph", label, text: pText, level });
+      }
     }
   }
 
