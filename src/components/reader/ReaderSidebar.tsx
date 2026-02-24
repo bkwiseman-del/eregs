@@ -54,24 +54,34 @@ export function ReaderSidebar({ allTocs, currentSection, open, onClose, isMobile
     ? expandedToc?.subparts.find(sp => sp.sections.some(s => s.section === currentSection))?.label ?? null
     : null;
 
-  // Subpart toggle state (for current part only)
-  const [manuallyToggled, setManuallyToggled] = useState<Set<string>>(new Set());
+  // Explicitly open subparts. The active subpart is always added to this set.
+  const [openSubparts, setOpenSubparts] = useState<Set<string>>(new Set());
 
-  // Reset subpart toggles when part changes
+  // Reset when part changes
   useEffect(() => {
-    setManuallyToggled(new Set());
+    setOpenSubparts(new Set());
   }, [currentPart]);
+
+  // Auto-open the active subpart whenever it changes
+  useEffect(() => {
+    if (activeSubpartLabel != null) {
+      setOpenSubparts(prev => {
+        if (prev.has(activeSubpartLabel)) return prev;
+        const next = new Set(prev);
+        next.add(activeSubpartLabel);
+        return next;
+      });
+    }
+  }, [activeSubpartLabel]);
 
   const isSubpartExpanded = (label: string, partNum: string) => {
     // For non-current parts, expand all subparts by default
     if (partNum !== currentPart) return true;
-    // For current part: active subpart expanded unless manually collapsed
-    if (label === activeSubpartLabel) return !manuallyToggled.has(label);
-    return manuallyToggled.has(label);
+    return openSubparts.has(label);
   };
 
   const toggleSubpart = (label: string) => {
-    setManuallyToggled(prev => {
+    setOpenSubparts(prev => {
       const next = new Set(prev);
       next.has(label) ? next.delete(label) : next.add(label);
       return next;
