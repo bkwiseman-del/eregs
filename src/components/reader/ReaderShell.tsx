@@ -10,7 +10,6 @@ import { ReaderSidebar } from "./ReaderSidebar";
 import { ReaderContent } from "./ReaderContent";
 import { InsightsPanel } from "./InsightsPanel";
 import { ActionBar } from "./ActionBar";
-import { NoteSheet } from "./NoteSheet";
 import { Toast } from "./Toast";
 
 // ── DATA STORE ──────────────────────────────────────────────────────────────
@@ -242,7 +241,6 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
 
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [selectedPids, setSelectedPids] = useState<Set<string>>(new Set());
-  const [noteSheetOpen, setNoteSheetOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Annotation | null>(null);
   const [toastMsg, setToastMsg] = useState("");
   const [toastKey, setToastKey] = useState(0);
@@ -340,16 +338,9 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     }
   }, [selectedPids, currentPart, currentSectionId, allSelectedHighlighted, annotations, showToast, clearSelection]);
 
-  // Open note sheet
-  const handleOpenNote = useCallback(() => {
-    setEditingNote(null);
-    setNoteSheetOpen(true);
-  }, []);
-
-  // Edit existing note
+  // Edit existing note — opens inline in ActionBar
   const handleEditNote = useCallback((annotation: Annotation) => {
     setEditingNote(annotation);
-    setNoteSheetOpen(true);
   }, []);
 
   // Save note — local state first, then try API
@@ -399,7 +390,6 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         }).catch(() => {});
       }
     }
-    setNoteSheetOpen(false);
     setEditingNote(null);
   }, [editingNote, selectedPids, currentPart, currentSectionId, showToast, clearSelection]);
 
@@ -412,7 +402,6 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     if (!editingNote.id.startsWith("local-")) {
       fetch(`/api/annotations?id=${editingNote.id}`, { method: "DELETE" }).catch(() => {});
     }
-    setNoteSheetOpen(false);
     setEditingNote(null);
   }, [editingNote, showToast]);
 
@@ -523,24 +512,19 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         />
       </div>
 
-      {/* Annotation UI overlays */}
+      {/* Annotation UI */}
       <ActionBar
         selectedCount={selectedPids.size}
         allHighlighted={allSelectedHighlighted}
         onHighlight={handleHighlight}
-        onNote={handleOpenNote}
+        onSaveNote={handleSaveNote}
         onCopy={handleCopy}
         onClear={clearSelection}
-      />
-
-      <NoteSheet
-        open={noteSheetOpen}
-        onClose={() => { setNoteSheetOpen(false); setEditingNote(null); }}
-        onSave={handleSaveNote}
-        onDelete={editingNote ? handleDeleteNote : undefined}
+        editingNote={editingNote ? { id: editingNote.id, note: editingNote.note || "" } : null}
+        onUpdateNote={(text) => handleSaveNote(text)}
+        onDeleteNote={handleDeleteNote}
+        onCancelEdit={() => setEditingNote(null)}
         paragraphPreview={noteSheetPreview}
-        initialText={editingNote?.note || ""}
-        isEditing={!!editingNote}
       />
 
       <Toast message={toastMsg} visible={toastKey > 0} key={toastKey} />
