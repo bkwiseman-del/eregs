@@ -232,25 +232,29 @@ function splitPackedParagraph(text: string): { label: string | undefined; text: 
   const rest = outerMatch[2];
 
   // First check: two labels packed at the start like "(g)(1) text"
-  // This must be checked BEFORE the inner-match pattern
-  const doubleMatch = rest.match(/^\(([^)]{1,4})\)\s+(.*)/);
-  if (doubleMatch) {
-    const secondLabel = doubleMatch[1].trim();
-    const secondText = doubleMatch[2].trim();
-    
-    // Only split if the outer label looks like a letter and second looks like a number/roman
-    // This handles "(g)(1) Property-carrying..." → [(g, ""), (1, "Property-carrying...")]
-    const outerIsLetter = /^[a-z]$/.test(outerLabel);
-    const secondIsDigitOrRoman = /^\d+$/.test(secondLabel) || /^[ivxlc]+$/i.test(secondLabel);
-    
-    if (outerIsLetter && secondIsDigitOrRoman) {
-      const result: { label: string | undefined; text: string }[] = [
-        { label: outerLabel, text: "" },
-      ];
-      // Recursively split the rest
-      const innerFull = `(${secondLabel}) ${secondText}`;
-      result.push(...splitPackedParagraph(innerFull));
-      return result;
+  // Only fires when the outer label's "rest" starts DIRECTLY with another paren —
+  // i.e. "(a)(1) ..." where there's no intro text between (a) and (1)
+  // This distinguishes from "(a) General. (1) The rules..." where "General." is intro text
+  if (rest.startsWith("(")) {
+    const doubleMatch = rest.match(/^\(([^)]{1,4})\)\s+(.*)/);
+    if (doubleMatch) {
+      const secondLabel = doubleMatch[1].trim();
+      const secondText = doubleMatch[2].trim();
+      
+      // Only split if the outer label looks like a letter and second looks like a number/roman
+      // This handles "(g)(1) Property-carrying..." → [(g, ""), (1, "Property-carrying...")]
+      const outerIsLetter = /^[a-z]$/.test(outerLabel);
+      const secondIsDigitOrRoman = /^\d+$/.test(secondLabel) || /^[ivxlc]+$/i.test(secondLabel);
+      
+      if (outerIsLetter && secondIsDigitOrRoman) {
+        const result: { label: string | undefined; text: string }[] = [
+          { label: outerLabel, text: "" },
+        ];
+        // Recursively split the rest
+        const innerFull = `(${secondLabel}) ${secondText}`;
+        result.push(...splitPackedParagraph(innerFull));
+        return result;
+      }
     }
   }
 
