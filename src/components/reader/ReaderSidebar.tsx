@@ -33,10 +33,13 @@ interface Props {
   isMobile: boolean;
   onNavigate: (section: string) => void;
   onExpandPart: (part: string) => void; // Tell shell to fetch TOC for this part
+  width?: number;                       // Desktop width in px (default 290)
 }
 
-export function ReaderSidebar({ allTocs, currentSection, open, onClose, isMobile, onNavigate, onExpandPart }: Props) {
-  const currentPart = currentSection.split(".")[0];
+export function ReaderSidebar({ allTocs, currentSection, open, onClose, isMobile, onNavigate, onExpandPart, width = 290 }: Props) {
+  const currentPart = currentSection.includes("-app")
+    ? currentSection.split("-")[0]
+    : currentSection.split(".")[0];
 
   // Which part is expanded in the TOC (null = all collapsed)
   const [expandedPart, setExpandedPart] = useState<string | null>(currentPart);
@@ -104,15 +107,15 @@ export function ReaderSidebar({ allTocs, currentSection, open, onClose, isMobile
     background: "var(--white)", borderRight: "1px solid var(--border)",
     display: "flex", flexDirection: "column",
   } : {
-    width: open ? 290 : 0, flexShrink: 0,
-    overflow: "hidden", transition: "width 0.25s ease",
-    background: "var(--white)", borderRight: "1px solid var(--border)",
+    width: open ? width : 0, flexShrink: 0,
+    overflow: "hidden", transition: open ? "none" : "width 0.25s ease",
+    background: "var(--white)", borderRight: open ? "none" : "1px solid var(--border)",
     display: "flex", flexDirection: "column",
   };
 
   return (
     <aside style={containerStyle}>
-      <div style={{ width: isMobile ? 300 : 290, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      <div style={{ width: isMobile ? 300 : width, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
         {/* Header */}
         <div style={{ padding: "12px 12px 8px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text3)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 7 }}>
@@ -214,6 +217,11 @@ export function ReaderSidebar({ allTocs, currentSection, open, onClose, isMobile
                           {/* Section links */}
                           {expanded && subpart.sections.map((sec) => {
                             const active = sec.section === currentSection;
+                            const isApp = sec.isAppendix;
+                            // Display: "390.5" for sections, "App A" for appendixes
+                            const displayNum = isApp
+                              ? sec.section.replace(/^\d+-app/, "App ").replace(/-sub/, " Sub ")
+                              : sec.section;
                             return (
                               <a
                                 key={sec.section}
@@ -235,8 +243,9 @@ export function ReaderSidebar({ allTocs, currentSection, open, onClose, isMobile
                                   <span style={{
                                     fontSize: 11, fontWeight: 500, flexShrink: 0,
                                     color: active ? "var(--accent)" : "var(--text3)",
-                                    minWidth: 38, fontVariantNumeric: "tabular-nums"
-                                  }}>{sec.section}</span>
+                                    minWidth: 38, fontVariantNumeric: "tabular-nums",
+                                    ...(isApp ? { fontStyle: "italic", fontSize: 10 } : {}),
+                                  }}>{displayNum}</span>
                                   <span style={{
                                     fontSize: 12, lineHeight: 1.35,
                                     color: active ? "var(--accent-text)" : "var(--text2)",

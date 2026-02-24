@@ -30,6 +30,7 @@ export interface EcfrNode {
 export interface TocEntry {
   section: string;
   title: string;
+  isAppendix?: boolean;  // true for appendix entries
 }
 
 export interface PartToc {
@@ -42,10 +43,51 @@ export interface PartToc {
   }[];
 }
 
+/** Parse a section slug like "390.5" or "385-appA" into part + section */
 export function parseSectionSlug(slug: string): { part: string; section: string } | null {
+  // Appendix: "385-appA", "395-appA-subB"
+  const appMatch = slug.match(/^(\d+)-app(.+)$/);
+  if (appMatch) return { part: appMatch[1], section: slug };
+  // Section: "390.5"
   const match = slug.match(/^(\d+)\.(.+)$/);
   if (!match) return null;
   return { part: match[1], section: slug };
+}
+
+/** Check if a section identifier is an appendix */
+export function isAppendixSection(section: string): boolean {
+  return section.includes("-app");
+}
+
+/** Convert eCFR appendix identifier to our slug format
+ *  e.g. "Appendix A to Part 385" → "385-appA"
+ *       "Appendix A to Subpart B of Part 395" → "395-appA-subB"
+ */
+export function appendixToSlug(identifier: string, part: string): string {
+  // The eCFR identifier format varies. Common patterns:
+  //   "Appendix A to Part 385"
+  //   "Appendix A to Subpart B of Part 395"
+  // We normalize to: "{part}-app{letter}" or "{part}-app{letter}-sub{letter}"
+  const m = identifier.match(/Appendix\s+(\S+)/i);
+  const letter = m ? m[1] : identifier;
+  const subMatch = identifier.match(/Subpart\s+(\S+)/i);
+  if (subMatch) {
+    return `${part}-app${letter}-sub${subMatch[1]}`;
+  }
+  return `${part}-app${letter}`;
+}
+
+/** Convert our appendix slug back to eCFR API query parameter
+ *  e.g. "385-appA" → "Appendix A to Part 385"
+ */
+export function slugToAppendixIdentifier(slug: string): string | null {
+  const m = slug.match(/^(\d+)-app(\S+?)(?:-sub(\S+))?$/);
+  if (!m) return null;
+  const [, part, letter, subpart] = m;
+  if (subpart) {
+    return `Appendix ${letter} to Subpart ${subpart} of Part ${part}`;
+  }
+  return `Appendix ${letter} to Part ${part}`;
 }
 
 // ── CACHED DATA ACCESS ───────────────────────────────────────────────────────
@@ -175,7 +217,16 @@ async function getLatestDate(): Promise<string> {
 
 async function fetchSectionFromEcfr(part: string, section: string): Promise<EcfrSection | null> {
   const date = await getLatestDate();
-  const url = `${ECFR_BASE}/api/versioner/v1/full/${date}/title-${TITLE}.xml?part=${part}&section=${section}`;
+
+  // Appendixes use a different URL structure
+  let url: string;
+  if (isAppendixSection(section)) {
+    const identifier = slugToAppendixIdentifier(section);
+    if (!identifier) return null;
+    url = `${ECFR_BASE}/api/versioner/v1/full/${date}/title-${TITLE}.xml?part=${part}&appendix=${encodeURIComponent(identifier)}`;
+  } else {
+    url = `${ECFR_BASE}/api/versioner/v1/full/${date}/title-${TITLE}.xml?part=${part}&section=${section}`;
+  }
 
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
@@ -221,6 +272,7 @@ async function fetchPartStructureFromEcfr(part: string): Promise<PartToc | null>
 
     const subparts: PartToc["subparts"] = [];
     let currentSubpart = { label: "", title: "General", sections: [] as TocEntry[] };
+    const appendixEntries: TocEntry[] = [];
 
     function processNode(node: any) {
       if (node.type === "subpart") {
@@ -236,6 +288,11 @@ async function fetchPartStructureFromEcfr(part: string): Promise<PartToc | null>
           section: node.identifier,
           title: node.label_description || node.label || "",
         });
+      } else if (node.type === "appendix") {
+        const identifier = node.identifier || node.label || "";
+        const slug = appendixToSlug(identifier, part);
+        const title = node.label_description || node.label || identifier;
+        appendixEntries.push({ section: slug, title, isAppendix: true });
       } else {
         (node.children || []).forEach(processNode);
       }
@@ -243,6 +300,15 @@ async function fetchPartStructureFromEcfr(part: string): Promise<PartToc | null>
 
     (partNode.children || []).forEach(processNode);
     if (currentSubpart.sections.length > 0) subparts.push(currentSubpart);
+
+    // Add appendixes as their own group
+    if (appendixEntries.length > 0) {
+      subparts.push({
+        label: "appendixes",
+        title: "Appendixes",
+        sections: appendixEntries,
+      });
+    }
 
     return {
       part,
@@ -288,6 +354,7 @@ function findPartInStructure(titleData: any, targetPart: string): any {
 function buildTocFromPartNode(partNode: any, part: string): PartToc {
   const subparts: PartToc["subparts"] = [];
   let currentSubpart = { label: "", title: "General", sections: [] as TocEntry[] };
+  const appendixEntries: TocEntry[] = [];
 
   function processNode(node: any) {
     if (node.type === "subpart") {
@@ -303,6 +370,12 @@ function buildTocFromPartNode(partNode: any, part: string): PartToc {
         section: node.identifier,
         title: node.label_description || node.label || "",
       });
+    } else if (node.type === "appendix") {
+      // Appendixes appear at the part level or subpart level
+      const identifier = node.identifier || node.label || "";
+      const slug = appendixToSlug(identifier, part);
+      const title = node.label_description || node.label || identifier;
+      appendixEntries.push({ section: slug, title, isAppendix: true });
     } else {
       (node.children || []).forEach(processNode);
     }
@@ -310,6 +383,15 @@ function buildTocFromPartNode(partNode: any, part: string): PartToc {
 
   (partNode.children || []).forEach(processNode);
   if (currentSubpart.sections.length > 0) subparts.push(currentSubpart);
+
+  // Add appendixes as their own "subpart" group if any exist
+  if (appendixEntries.length > 0) {
+    subparts.push({
+      label: "appendixes",
+      title: "Appendixes",
+      sections: appendixEntries,
+    });
+  }
 
   return {
     part,
@@ -364,7 +446,19 @@ export async function syncPart(part: string): Promise<{ sections: number; errors
   const allSections = toc.subparts.flatMap(sp => sp.sections);
   for (const sec of allSections) {
     try {
-      const url = `${ECFR_BASE}/api/versioner/v1/full/${date}/title-${TITLE}.xml?part=${part}&section=${sec.section}`;
+      // Build URL differently for appendixes vs sections
+      let url: string;
+      if (sec.isAppendix) {
+        const identifier = slugToAppendixIdentifier(sec.section);
+        if (!identifier) {
+          errors.push(`Invalid appendix slug: ${sec.section}`);
+          continue;
+        }
+        url = `${ECFR_BASE}/api/versioner/v1/full/${date}/title-${TITLE}.xml?part=${part}&appendix=${encodeURIComponent(identifier)}`;
+      } else {
+        url = `${ECFR_BASE}/api/versioner/v1/full/${date}/title-${TITLE}.xml?part=${part}&section=${sec.section}`;
+      }
+
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) {
         errors.push(`HTTP ${res.status} for ${sec.section}`);
@@ -408,9 +502,14 @@ export async function syncPart(part: string): Promise<{ sections: number; errors
 
 function parseXml(xml: string, part: string, section: string): EcfrSection | null {
   try {
+    // Appendixes may use DIV9 instead of DIV8
+    const isAppendix = isAppendixSection(section);
+
     const headMatch = xml.match(/<HEAD>([\s\S]*?)<\/HEAD>/);
     const heading = headMatch ? stripTags(headMatch[1]).trim() : "";
-    const title = heading.replace(/^§\s*[\d.]+[A-Z]?\s*/, "").trim();
+    const title = isAppendix
+      ? heading // Keep full heading for appendixes (e.g. "Appendix A to Part 385 — Explanation...")
+      : heading.replace(/^§\s*[\d.]+[A-Z]?\s*/, "").trim();
 
     let subpartLabel: string | undefined;
     let subpartTitle: string | undefined;
@@ -569,7 +668,7 @@ function parseParagraphs(xml: string): EcfrNode[] {
   let counter = 0;
   const lastAtLevel = new Map<number, string>();
 
-  const bodyMatch = xml.match(/<DIV8[^>]*>([\s\S]*)<\/DIV8>/);
+  const bodyMatch = xml.match(/<DIV8[^>]*>([\s\S]*)<\/DIV8>/) || xml.match(/<DIV9[^>]*>([\s\S]*)<\/DIV9>/);
   const body = bodyMatch ? bodyMatch[1] : xml;
 
   const chunkRegex = /(<GPOTABLE[\s\S]*?<\/GPOTABLE>|<TABLE[\s\S]*?<\/TABLE>|<GPH[\s\S]*?<\/GPH>|<EXTRACT[\s\S]*?<\/EXTRACT>|<img[^>]*\/?>|<P>[\s\S]*?<\/P>|<FP[^>]*>[\s\S]*?<\/FP>)/gi;

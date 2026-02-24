@@ -261,7 +261,9 @@ export function ReaderContent({
           border: "1px solid var(--accent-border)",
           display: "inline-block", padding: "3px 9px", borderRadius: 5, marginBottom: 9,
         }}>
-          § {section.section}
+          § {section.section.includes("-app")
+            ? section.section.replace(/^\d+-app/, "Appendix ").replace(/-sub/, " to Subpart ")
+            : section.section}
         </div>
         <h1 style={{
           fontSize: 25, fontWeight: 400, color: "var(--text)",

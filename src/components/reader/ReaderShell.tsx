@@ -10,6 +10,7 @@ import { ReaderSidebar } from "./ReaderSidebar";
 import { ReaderContent } from "./ReaderContent";
 import { InsightsPanel } from "./InsightsPanel";
 import { ActionBar } from "./ActionBar";
+import { ResizeHandle } from "./ResizeHandle";
 import { Toast } from "./Toast";
 
 // ── DATA STORE ──────────────────────────────────────────────────────────────
@@ -109,12 +110,34 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   const [isMobile, setIsMobile] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
 
+  // ── Resizable panel widths (desktop only) ──────────────────────────────
+  const TOC_MIN = 200, TOC_MAX = 420, TOC_DEFAULT = 290;
+  const INS_MIN = 240, INS_MAX = 440, INS_DEFAULT = 296;
+  const [tocWidth, setTocWidth] = useState(TOC_DEFAULT);
+  const [insWidth, setInsWidth] = useState(INS_DEFAULT);
+  // Track collapsed state separately from open state for desktop
+  const [tocCollapsed, setTocCollapsed] = useState(false);
+
+  const handleTocResize = useCallback((delta: number) => {
+    setTocWidth(w => Math.min(TOC_MAX, Math.max(TOC_MIN, w + delta)));
+  }, []);
+
+  const handleInsResize = useCallback((delta: number) => {
+    setInsWidth(w => Math.min(INS_MAX, Math.max(INS_MIN, w + delta)));
+  }, []);
+
+  const toggleTocCollapse = useCallback(() => {
+    setTocCollapsed(c => !c);
+  }, []);
+
   // ── Section state ───────────────────────────────────────────────────────
   const [currentSectionId, setCurrentSectionId] = useState(serverSection.section);
   // Revision counter to force re-renders when store updates
   const [storeRevision, setStoreRevision] = useState(0);
 
-  const currentPart = currentSectionId.split(".")[0];
+  const currentPart = currentSectionId.includes("-app")
+    ? currentSectionId.split("-")[0]
+    : currentSectionId.split(".")[0];
 
   // ── Seed store from server props ────────────────────────────────────────
   useEffect(() => {
@@ -152,7 +175,9 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
 
   // ── Navigation ──────────────────────────────────────────────────────────
   const navigateTo = useCallback(async (sectionId: string) => {
-    const part = sectionId.split(".")[0];
+    const part = sectionId.includes("-app")
+      ? sectionId.split("-")[0]
+      : sectionId.split(".")[0];
 
     // If section is already in store, instant switch
     const cached = getSection(sectionId);
@@ -463,6 +488,8 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         insightsOpen={insightsOpen}
         onToggleInsights={() => setInsightsOpen(v => !v)}
         onToggleSidebar={() => setSidebarOpen(v => !v)}
+        onToggleToc={!isMobile ? toggleTocCollapse : undefined}
+        tocCollapsed={tocCollapsed}
         isMobile={isMobile}
       />
 
@@ -473,15 +500,58 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       }}>
         {!isMobile && <NavRail />}
 
-        <ReaderSidebar
-          allTocs={allTocs}
-          currentSection={currentSectionId}
-          open={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-          isMobile={isMobile}
-          onNavigate={navigateTo}
-          onExpandPart={fetchTocForPart}
-        />
+        {/* Desktop TOC with resize handle */}
+        {!isMobile && !tocCollapsed && (
+          <>
+            <ReaderSidebar
+              allTocs={allTocs}
+              currentSection={currentSectionId}
+              open={sidebarOpen}
+              onClose={() => setSidebarOpen(false)}
+              isMobile={false}
+              onNavigate={navigateTo}
+              onExpandPart={fetchTocForPart}
+              width={tocWidth}
+            />
+            <ResizeHandle
+              side="left"
+              onResize={handleTocResize}
+              onDoubleClick={toggleTocCollapse}
+            />
+          </>
+        )}
+
+        {/* Desktop collapsed TOC tab */}
+        {!isMobile && tocCollapsed && (
+          <div
+            onClick={toggleTocCollapse}
+            title="Expand table of contents"
+            style={{
+              width: 28, flexShrink: 0, background: "var(--white)",
+              borderRight: "1px solid var(--border)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", writingMode: "vertical-rl",
+              fontSize: 10, fontWeight: 600, color: "var(--text3)",
+              letterSpacing: "0.08em", textTransform: "uppercase",
+              userSelect: "none",
+            }}
+          >
+            <span style={{ transform: "rotate(180deg)" }}>Contents</span>
+          </div>
+        )}
+
+        {/* Mobile TOC (overlay) */}
+        {isMobile && (
+          <ReaderSidebar
+            allTocs={allTocs}
+            currentSection={currentSectionId}
+            open={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            isMobile={true}
+            onNavigate={navigateTo}
+            onExpandPart={fetchTocForPart}
+          />
+        )}
 
         {isMobile && sidebarOpen && (
           <div
@@ -505,10 +575,19 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
           />
         </main>
 
+        {/* Desktop insights with resize handle */}
+        {!isMobile && insightsOpen && (
+          <ResizeHandle
+            side="right"
+            onResize={handleInsResize}
+          />
+        )}
+
         <InsightsPanel
           section={currentSection}
           open={insightsOpen}
           onClose={() => setInsightsOpen(false)}
+          width={insWidth}
         />
       </div>
 

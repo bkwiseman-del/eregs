@@ -7,11 +7,13 @@ interface Props {
   section: EcfrSection;
   insightsOpen: boolean;
   onToggleInsights: () => void;
-  onToggleSidebar: () => void;
+  onToggleSidebar: () => void;  // Mobile: open/close overlay
+  onToggleToc?: () => void;     // Desktop: collapse/expand TOC
+  tocCollapsed?: boolean;
   isMobile: boolean;
 }
 
-export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSidebar, isMobile }: Props) {
+export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSidebar, onToggleToc, tocCollapsed, isMobile }: Props) {
   return (
     <nav style={{
       position: "fixed", top: 0, left: 0, right: 0, height: "var(--nav-h)",
@@ -47,11 +49,28 @@ export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSideba
           <svg width="12" height="12" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
       ) : (
-        <div style={{
-          flex: 1, maxWidth: 520, display: "flex", alignItems: "center", gap: 8,
-          background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8,
-          padding: "0 10px", height: 34
-        }}>
+        <>
+          {/* Desktop TOC toggle */}
+          {onToggleToc && (
+            <button onClick={onToggleToc} title={tocCollapsed ? "Show table of contents" : "Hide table of contents"} style={{
+              width: 34, height: 34, borderRadius: 8,
+              border: tocCollapsed ? "1px solid var(--border)" : "1px solid var(--accent-border)",
+              background: tocCollapsed ? "var(--white)" : "var(--accent-bg)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: tocCollapsed ? "var(--text2)" : "var(--accent)",
+              cursor: "pointer", flexShrink: 0,
+            }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+                <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+              </svg>
+            </button>
+          )}
+          <div style={{
+            flex: 1, maxWidth: 520, display: "flex", alignItems: "center", gap: 8,
+            background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8,
+            padding: "0 10px", height: 34
+          }}>
           <svg width="14" height="14" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" placeholder="Search regulations, guidance, insights…" style={{
             flex: 1, border: "none", background: "transparent",
@@ -62,6 +81,7 @@ export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSideba
             padding: "1px 5px", borderRadius: 4, border: "1px solid var(--border)", fontFamily: "inherit"
           }}>/</kbd>
         </div>
+        </>
       )}
 
       {/* Insights toggle */}

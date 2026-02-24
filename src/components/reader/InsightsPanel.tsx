@@ -6,6 +6,7 @@ interface Props {
   section: EcfrSection;
   open: boolean;
   onClose: () => void;
+  width?: number;
 }
 
 const guidance = [
@@ -56,15 +57,15 @@ const IPCard = ({ card }: { card: typeof guidance[0] }) => (
   </div>
 );
 
-export function InsightsPanel({ section, open, onClose }: Props) {
+export function InsightsPanel({ section, open, onClose, width = 296 }: Props) {
   const [activeTab, setActiveTab] = useState<"guidance" | "videos" | "articles">("guidance");
 
   if (!open) return null;
 
   return (
     <aside style={{
-      width: "var(--panel-w)", flexShrink: 0, background: "var(--white)",
-      borderLeft: "1px solid var(--border)", display: "flex",
+      width, flexShrink: 0, background: "var(--white)",
+      borderLeft: "none", display: "flex",
       flexDirection: "column", overflow: "hidden"
     }}>
       {/* Header */}
