@@ -160,7 +160,7 @@ function splitPackedParagraph(text: string): { label: string | undefined; text: 
   const embeddedLabelRegex = /(.{5,}?)\s+(\([^)]{1,4}\))\s+/g;
 
   // First check if the text itself starts with a label
-  const startsWithLabel = text.match(/^\(([^)]{1,4})\)\s*(.*)/s);
+  const startsWithLabel = text.match(/^\(([^)]{1,4})\)\s*([\s\S]*)/);
   if (!startsWithLabel) {
     return [{ label: undefined, text }];
   }
@@ -170,7 +170,7 @@ function splitPackedParagraph(text: string): { label: string | undefined; text: 
 
   // Look for an embedded sub-label in the rest
   // Pattern: text ending with em-dash, colon, or just a natural break before a label
-  const innerLabelMatch = rest.match(/^(.*?(?:—|-{1,2}|:))\s*(\([^)]{1,4}\))\s+(.+)/s);
+  const innerLabelMatch = rest.match(/^(.*?(?:—|-{1,2}|:))\s*(\([^)]{1,4}\))\s+([\s\S]+)/);
   if (innerLabelMatch) {
     const intro = innerLabelMatch[1].trim();
     const innerLabel = innerLabelMatch[2].slice(1, -1); // strip parens
