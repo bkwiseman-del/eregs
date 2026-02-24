@@ -173,3 +173,32 @@ model Annotation {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 }
+
+// ── REGULATION CACHE ─────────────────────────────────────────────────────────
+
+model CachedSection {
+  id          String   @id @default(cuid())
+  part        String
+  section     String   @unique  // e.g. "390.5"
+  title       String
+  contentJson String   @db.Text // JSON-serialized EcfrNode[]
+  subpartLabel String?
+  subpartTitle String?
+  ecfrVersion String            // eCFR date e.g. "2026-02-24"
+  rawXml      String   @db.Text // original XML for re-parsing
+  cachedAt    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([part])
+  @@index([ecfrVersion])
+}
+
+model CachedPartToc {
+  id          String   @id @default(cuid())
+  part        String   @unique
+  title       String
+  tocJson     String   @db.Text // JSON-serialized subparts array
+  ecfrVersion String
+  cachedAt    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
