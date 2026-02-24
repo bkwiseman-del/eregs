@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { PartToc } from "@/lib/ecfr";
 
@@ -36,6 +36,14 @@ interface Props {
 
 export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile }: Props) {
   const currentPart = currentSection.split(".")[0];
+
+  // Track which part is expanded — defaults to the current part
+  const [expandedPart, setExpandedPart] = useState<string | null>(currentPart);
+
+  // Sync expanded part when navigating to a different part
+  useEffect(() => {
+    setExpandedPart(currentPart);
+  }, [currentPart]);
 
   // Always derive the active subpart from current section — don't store in state
   const activeSubpartLabel = toc?.subparts.find(sp =>
@@ -96,9 +104,25 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile }: 
         <div style={{ flex: 1, overflowY: "auto", padding: "6px 0" }}>
           {FMCSR_PARTS.map(({ part, title }) => {
             const isCurrentPart = part === currentPart;
+            const isExpanded = expandedPart === part;
+
+            const handlePartClick = (e: React.MouseEvent) => {
+              if (isExpanded) {
+                // Already expanded — collapse it
+                e.preventDefault();
+                setExpandedPart(null);
+              } else {
+                // Expand this part; if it's a different part, also navigate
+                setExpandedPart(part);
+                if (isCurrentPart) {
+                  e.preventDefault(); // Don't navigate, just expand
+                }
+              }
+            };
+
             return (
               <div key={part}>
-                <Link href={`/regs/${part}.1`} style={{ textDecoration: "none" }}>
+                <Link href={`/regs/${part}.1`} onClick={handlePartClick} style={{ textDecoration: "none" }}>
                   <div style={{
                     display: "flex", alignItems: "center", justifyContent: "space-between",
                     padding: "7px 12px",
@@ -108,8 +132,8 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile }: 
                   }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 7, minWidth: 0, flex: 1 }}>
                       <span style={{
-                        fontSize: 11, fontWeight: 600, flexShrink: 0,
-                        color: isCurrentPart ? "var(--accent)" : "var(--text3)",
+                        fontSize: 12, fontWeight: 700, flexShrink: 0,
+                        color: isCurrentPart ? "var(--accent)" : "var(--text)",
                         fontVariantNumeric: "tabular-nums"
                       }}>{part}</span>
                       <span style={{
@@ -123,7 +147,7 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile }: 
                       viewBox="0 0 24 24" style={{
                         flexShrink: 0, marginLeft: 4,
                         color: isCurrentPart ? "var(--accent)" : "var(--text3)",
-                        transform: isCurrentPart ? "rotate(90deg)" : "none",
+                        transform: isExpanded ? "rotate(90deg)" : "none",
                         transition: "transform 0.2s"
                       }}>
                       <polyline points="9 18 15 12 9 6"/>
@@ -131,7 +155,7 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile }: 
                   </div>
                 </Link>
 
-                {isCurrentPart && toc && (
+                {isExpanded && toc && isCurrentPart && (
                   <div style={{ paddingBottom: 4 }}>
                     {toc.subparts.map((subpart) => {
                       const expanded = isSubpartExpanded(subpart.label);
