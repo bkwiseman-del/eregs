@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import type { PartToc } from "@/lib/ecfr";
 
 const FMCSR_PARTS: { part: string; title: string }[] = [
@@ -32,9 +31,10 @@ interface Props {
   open: boolean;
   onClose: () => void;
   isMobile: boolean;
+  onNavigate?: (section: string) => void;
 }
 
-export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile }: Props) {
+export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, onNavigate }: Props) {
   const currentPart = currentSection.split(".")[0];
 
   // Track which part is expanded — defaults to the current part
@@ -106,29 +106,26 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile }: 
             const isCurrentPart = part === currentPart;
             const isExpanded = expandedPart === part;
 
-            const handlePartClick = (e: React.MouseEvent) => {
+            const handlePartClick = () => {
               if (isExpanded) {
-                // Already expanded — collapse it
-                e.preventDefault();
                 setExpandedPart(null);
               } else {
-                // Expand this part; if it's a different part, also navigate
                 setExpandedPart(part);
-                if (isCurrentPart) {
-                  e.preventDefault(); // Don't navigate, just expand
-                }
               }
             };
 
             return (
               <div key={part}>
-                <Link href={`/regs/${part}.1`} onClick={handlePartClick} style={{ textDecoration: "none" }}>
+                <button onClick={handlePartClick} style={{
+                  width: "100%", border: "none", background: "none",
+                  cursor: "pointer", textAlign: "left", padding: 0,
+                }}>
                   <div style={{
                     display: "flex", alignItems: "center", justifyContent: "space-between",
                     padding: "7px 12px",
                     background: isCurrentPart ? "var(--accent-bg)" : "transparent",
                     borderLeft: isCurrentPart ? "2px solid var(--accent)" : "2px solid transparent",
-                    cursor: "pointer", transition: "all 0.1s",
+                    transition: "all 0.1s",
                   }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 7, minWidth: 0, flex: 1 }}>
                       <span style={{
@@ -153,7 +150,7 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile }: 
                       <polyline points="9 18 15 12 9 6"/>
                     </svg>
                   </div>
-                </Link>
+                </button>
 
                 {isExpanded && toc && isCurrentPart && (
                   <div style={{ paddingBottom: 4 }}>
@@ -188,7 +185,18 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile }: 
                           {expanded && subpart.sections.map((sec) => {
                             const active = sec.section === currentSection;
                             return (
-                              <Link key={sec.section} href={`/regs/${sec.section}`} style={{ textDecoration: "none" }}>
+                              <a
+                                key={sec.section}
+                                href={`/regs/${sec.section}`}
+                                onClick={(e) => {
+                                  if (onNavigate) {
+                                    e.preventDefault();
+                                    onNavigate(sec.section);
+                                    if (isMobile) onClose();
+                                  }
+                                }}
+                                style={{ textDecoration: "none" }}
+                              >
                                 <div style={{
                                   display: "flex", alignItems: "baseline", gap: 8,
                                   padding: "5px 12px 5px 22px",
@@ -207,7 +215,7 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile }: 
                                     fontWeight: active ? 500 : 400
                                   }}>{sec.title}</span>
                                 </div>
-                              </Link>
+                              </a>
                             );
                           })}
                         </div>

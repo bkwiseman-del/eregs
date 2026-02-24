@@ -1,9 +1,9 @@
-import Link from "next/link";
 import type { EcfrSection, EcfrNode } from "@/lib/ecfr";
 
 interface Props {
   section: EcfrSection;
   adjacent: { prev: string | null; next: string | null };
+  onNavigate?: (section: string) => void;
 }
 
 function renderNode(node: EcfrNode) {
@@ -105,7 +105,14 @@ function renderNode(node: EcfrNode) {
   );
 }
 
-export function ReaderContent({ section, adjacent }: Props) {
+export function ReaderContent({ section, adjacent, onNavigate }: Props) {
+  const navClick = (sectionId: string) => (e: React.MouseEvent) => {
+    if (onNavigate) {
+      e.preventDefault();
+      onNavigate(sectionId);
+    }
+  };
+
   return (
     <div style={{ maxWidth: 740, margin: "0 auto", padding: "0 24px 120px" }}>
       {/* Status bar */}
@@ -151,7 +158,7 @@ export function ReaderContent({ section, adjacent }: Props) {
       {/* Prev / Next */}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, paddingTop: 24, borderTop: "1px solid var(--border)" }}>
         {adjacent.prev ? (
-          <Link href={`/regs/${adjacent.prev}`} style={{ textDecoration: "none" }}>
+          <a href={`/regs/${adjacent.prev}`} onClick={navClick(adjacent.prev)} style={{ textDecoration: "none" }}>
             <div style={{
               display: "flex", alignItems: "center", gap: 8, padding: "10px 16px",
               border: "1px solid var(--border)", borderRadius: 8, background: "var(--white)",
@@ -163,11 +170,11 @@ export function ReaderContent({ section, adjacent }: Props) {
                 <div style={{ fontWeight: 500 }}>§ {adjacent.prev}</div>
               </div>
             </div>
-          </Link>
+          </a>
         ) : <div />}
 
         {adjacent.next && (
-          <Link href={`/regs/${adjacent.next}`} style={{ textDecoration: "none" }}>
+          <a href={`/regs/${adjacent.next}`} onClick={navClick(adjacent.next)} style={{ textDecoration: "none" }}>
             <div style={{
               display: "flex", alignItems: "center", gap: 8, padding: "10px 16px",
               border: "1px solid var(--border)", borderRadius: 8, background: "var(--white)",
@@ -179,7 +186,7 @@ export function ReaderContent({ section, adjacent }: Props) {
               </div>
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
             </div>
-          </Link>
+          </a>
         )}
       </div>
     </div>
