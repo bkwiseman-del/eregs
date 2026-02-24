@@ -1,93 +1,107 @@
-# eRegs — Digital Federal Motor Carrier Safety Regulations
+# eRegs
 
-Interactive digital platform for FMCSA regulations (Title 49 CFR Parts 40, 376, 380–399). Replaces physical regulation books with a searchable, responsive web interface.
+A digital platform that modernizes Federal Motor Carrier Safety Regulations (FMCSRs) by replacing traditional printed regulation books with an interactive reader. Built for fleet administrators and drivers in the trucking industry.
 
-**Live:** https://eregs-hpvu.vercel.app
+## What It Does
 
-## Stack
+- **Regulation Reader** — Browse all FMCSR Parts (40–399) with structured, navigable content parsed from the eCFR XML API
+- **Annotations** — Tap paragraphs to highlight, add notes, or copy text with CFR citations. Local-first (works without auth, persists with auth).
+- **Insights Panel** — Contextual FMCSA guidance, Trucksafe videos, and articles alongside regulation text
+- **Appendixes** — Full support for regulatory appendixes (e.g., Appendix A to Part 385)
+- **Version History** — Track regulatory changes with Federal Register citations
+- **Responsive** — Desktop layout with resizable/collapsible sidebars; mobile layout with bottom tabs and drawer navigation
 
-- **Framework:** Next.js 15 (App Router)
-- **Database:** PostgreSQL on Railway (via Prisma 7)
-- **Auth:** NextAuth.js
-- **Hosting:** Vercel
-- **Data Source:** eCFR API (https://www.ecfr.gov)
+## Tech Stack
 
-## Architecture
+- **Next.js 16** (App Router, React 19)
+- **PostgreSQL** + **Prisma ORM** (Neon-compatible)
+- **NextAuth v5** (email magic link via Resend, SMS via Twilio)
+- **eCFR API** — Fetches regulation structure and full XML content from ecfr.gov
+- **Vercel** for deployment
 
-Regulations are cached in the database rather than fetched live from eCFR. This eliminates API timeouts and provides instant page loads.
-
-- `CachedSection` — parsed regulation content (JSON) + raw XML for each section
-- `CachedPartToc` — table of contents for each part
-- `CachedImage` — regulation diagram images (sourced from GovInfo bulk data)
-
-The 6-level paragraph hierarchy (`(a)(1)(i)(A)(1)(i)`) is detected automatically from the flat XML using a stateful label parser with predecessor tracking.
-
-## Environment Variables
+## Project Structure
 
 ```
-DATABASE_URL=postgresql://...          # Railway Postgres connection string
-CRON_SECRET=eregs-sync-2026            # Auth for sync API endpoint
-NEXTAUTH_SECRET=...                    # NextAuth session secret
-NEXTAUTH_URL=https://eregs-hpvu.vercel.app
+src/
+├── app/
+│   ├── regs/[section]/     # Dynamic reader route (e.g., /regs/390.5)
+│   ├── api/
+│   │   ├── reader-data/    # Serves cached TOC + sections to the client
+│   │   ├── annotations/    # CRUD for highlights and notes
+│   │   ├── cron/sync-regs/ # Cron endpoint to sync eCFR data
+│   │   └── ecfr-image/     # Proxy for eCFR regulation images
+│   ├── (auth)/             # Login / verify pages
+│   └── (dashboard)/        # Dashboard (post-auth)
+├── components/reader/
+│   ├── ReaderShell.tsx      # Main orchestrator: state, navigation, annotations
+│   ├── ReaderContent.tsx    # Renders paragraphs, tables, images with annotation state
+│   ├── ReaderSidebar.tsx    # TOC sidebar (all FMCSR parts, expandable subparts)
+│   ├── InsightsPanel.tsx    # Guidance, videos, articles panel
+│   ├── ActionBar.tsx        # Selection actions: highlight, note, copy (inline note editor)
+│   ├── TopNav.tsx           # Navigation bar with search, TOC toggle, insights toggle
+│   ├── NavRail.tsx          # Left icon rail (desktop)
+│   ├── ResizeHandle.tsx     # Draggable panel border for resizing sidebars
+│   └── Toast.tsx            # Feedback notifications
+├── lib/
+│   ├── ecfr/index.ts        # eCFR API client, XML parser, caching, sync logic
+│   ├── annotations.ts       # Annotation types and paragraph ID helpers
+│   ├── auth/                # NextAuth configuration
+│   └── db/                  # Prisma client
+scripts/
+├── sync-local.ts            # Local dev: sync all regulation data
+├── sync-all.sh              # Batch sync script
+└── sync-images.ts           # Sync regulation images
 ```
 
-## Regulation Sync
-
-Regulations are synced from the eCFR API and cached in the database. Run locally (Vercel times out on free tier):
-
-### Full sync (fetches all sections from eCFR — takes ~10 min)
+## Setup
 
 ```bash
-npx tsx scripts/sync-local.ts
-```
-
-### Re-parse only (re-processes cached XML without fetching — instant)
-
-```bash
-npx tsx scripts/sync-local.ts --reparse
-```
-
-### Sync images (requires downloading the GovInfo graphics ZIP first)
-
-```bash
-# 1. Download and extract Title 49 graphics
-curl -L -o /tmp/ecfr-graphics.zip "https://www.govinfo.gov/bulkdata/ECFR/title-49/ECFR-title49-graphics.zip"
-mkdir -p /tmp/ecfr-graphics
-cd /tmp/ecfr-graphics && unzip /tmp/ecfr-graphics.zip
-
-# 2. Load into database
-cd ~/projects/eregs
-npx tsx scripts/load-images.ts
-```
-
-### Vercel Cron (daily TOC sync only — sections are too large for free tier timeout)
-
-Configured in `vercel.json` to run daily at 6am UTC. Syncs table of contents structure only.
-
-## Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `scripts/sync-local.ts` | Full regulation sync (run locally) |
-| `scripts/sync-local.ts --reparse` | Re-parse cached XML with updated parser |
-| `scripts/load-images.ts` | Load images from local GovInfo ZIP into DB |
-| `scripts/sync-images.ts` | Attempt to fetch images from eCFR (blocked — use load-images instead) |
-| `scripts/sync-all.sh` | Call Vercel sync API per-part (limited by timeout) |
-| `scripts/check-xml.ts` | Debug: inspect cached XML for a section |
-| `scripts/check-tables.ts` | Debug: check table parsing for cached sections |
-
-## Development
-
-```bash
+# Install
 npm install
+
+# Environment variables
+cp .env.example .env
+# Required:
+#   DATABASE_URL          — PostgreSQL connection string
+#   AUTH_SECRET            — NextAuth secret (openssl rand -base64 32)
+#   RESEND_API_KEY         — For email magic links
+#   AUTH_RESEND_FROM       — Sender email address
+# Optional:
+#   TWILIO_ACCOUNT_SID     — For SMS auth
+#   TWILIO_AUTH_TOKEN
+#   TWILIO_PHONE_NUMBER
+
+# Database
+npx prisma migrate deploy
 npx prisma generate
-npx prisma migrate dev
+
+# Sync regulation data (first run — fetches all FMCSR parts from eCFR)
+npx tsx scripts/sync-local.ts
+
+# Run
 npm run dev
 ```
 
-## eCFR API Reference
+Open [http://localhost:3000/regs/390.5](http://localhost:3000/regs/390.5) to see the reader.
 
-- **Structure:** `GET /api/versioner/v1/structure/{date}/title-49.json`
-- **Content:** `GET /api/versioner/v1/full/{date}/title-49.xml?part=390&section=390.5`
-- **Titles:** `GET /api/versioner/v1/titles` (use `up_to_date_as_of` for latest date)
-- **Images:** Blocked via direct fetch. Use GovInfo bulk download: `https://www.govinfo.gov/bulkdata/ECFR/title-49/ECFR-title49-graphics.zip`
+## Data Pipeline
+
+Regulation content flows from the eCFR API into a local PostgreSQL cache:
+
+1. **Structure sync** — Fetches the Title 49 structure tree, extracts part/subpart/section/appendix hierarchy, stores as `CachedPartToc` rows
+2. **Content sync** — For each section, fetches XML from the eCFR versioner API, parses into structured `EcfrNode[]` (paragraphs, tables, images), stores as `CachedSection` rows
+3. **Reader delivery** — The `/api/reader-data?part=390` endpoint serves an entire part's TOC + sections in one call. The client caches in-memory for instant cross-section navigation.
+
+Appendixes use a different eCFR endpoint (`&appendix=...` vs `&section=...`) and are identified by slugs like `385-appA`.
+
+## Key Design Decisions
+
+- **Paragraph as annotation unit** — Stable structural identifiers, robust to regulation updates, no fragile text offsets
+- **Local-first annotations** — UI updates immediately on tap, API sync happens in background. Works without authentication.
+- **Single-page reader** — Client-side navigation between sections within a part. Full parts loaded in one API call and cached in a global in-memory store.
+- **Resizable panels** — TOC (200–420px) and Insights (240–440px) panels have drag handles. TOC is collapsible to a 28px tab.
+
+## Monetization
+
+- $4 per driver invite (personal device)
+- $4 per tablet registration (shared fleet device)
