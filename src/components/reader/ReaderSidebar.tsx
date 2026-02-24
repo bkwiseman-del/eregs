@@ -26,62 +26,47 @@ const FMCSR_PARTS: { part: string; title: string }[] = [
 ];
 
 interface Props {
-  toc: PartToc | null;
-  currentSection: string;
+  allTocs: Map<string, PartToc>;       // TOC data keyed by part number
+  currentSection: string;               // e.g. "395.1"
   open: boolean;
   onClose: () => void;
   isMobile: boolean;
-  onNavigate?: (section: string) => void;
+  onNavigate: (section: string) => void;
+  onExpandPart: (part: string) => void; // Tell shell to fetch TOC for this part
 }
 
-export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, onNavigate }: Props) {
+export function ReaderSidebar({ allTocs, currentSection, open, onClose, isMobile, onNavigate, onExpandPart }: Props) {
   const currentPart = currentSection.split(".")[0];
 
-  // Track which part is expanded — defaults to the current part
+  // Which part is expanded in the TOC (null = all collapsed)
   const [expandedPart, setExpandedPart] = useState<string | null>(currentPart);
-
-  // Cache of fetched TOCs keyed by part number
-  const [tocCache, setTocCache] = useState<Map<string, PartToc>>(new Map());
-
-  // Seed cache with the server-provided TOC for the current part
-  useEffect(() => {
-    if (toc && !tocCache.has(toc.part)) {
-      setTocCache(prev => new Map(prev).set(toc.part, toc));
-    }
-  }, [toc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync expanded part when navigating to a different part
   useEffect(() => {
     setExpandedPart(currentPart);
   }, [currentPart]);
 
-  // Fetch TOC when expanding a part we don't have yet
-  useEffect(() => {
-    if (!expandedPart) return;
-    if (tocCache.has(expandedPart)) return;
-    fetch(`/api/part-toc?part=${expandedPart}`)
-      .then(r => r.ok ? r.json() : null)
-      .then((data: PartToc | null) => {
-        if (data) setTocCache(prev => new Map(prev).set(expandedPart, data));
-      })
-      .catch(() => {});
-  }, [expandedPart]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The TOC for the currently expanded part (may be null if not yet loaded)
+  const expandedToc = expandedPart ? allTocs.get(expandedPart) ?? null : null;
 
-  // Get TOC for the expanded part
-  const expandedToc = expandedPart ? tocCache.get(expandedPart) ?? null : null;
+  // Active subpart — only meaningful within the current part
+  const activeSubpartLabel = expandedPart === currentPart
+    ? expandedToc?.subparts.find(sp => sp.sections.some(s => s.section === currentSection))?.label ?? null
+    : null;
 
-  // Always derive the active subpart from current section
-  const activeSubpartLabel = toc?.subparts.find(sp =>
-    sp.sections.some(s => s.section === currentSection)
-  )?.label ?? null;
-
-  // Manually toggled subparts (additions/removals on top of the auto-expanded active one)
+  // Subpart toggle state (for current part only)
   const [manuallyToggled, setManuallyToggled] = useState<Set<string>>(new Set());
 
-  const isSubpartExpanded = (label: string) => {
-    // Active subpart is always expanded unless manually collapsed
+  // Reset subpart toggles when part changes
+  useEffect(() => {
+    setManuallyToggled(new Set());
+  }, [currentPart]);
+
+  const isSubpartExpanded = (label: string, partNum: string) => {
+    // For non-current parts, expand all subparts by default
+    if (partNum !== currentPart) return true;
+    // For current part: active subpart expanded unless manually collapsed
     if (label === activeSubpartLabel) return !manuallyToggled.has(label);
-    // Others expanded only if manually opened
     return manuallyToggled.has(label);
   };
 
@@ -91,6 +76,15 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, on
       next.has(label) ? next.delete(label) : next.add(label);
       return next;
     });
+  };
+
+  const handlePartClick = (part: string) => {
+    if (expandedPart === part) {
+      setExpandedPart(null);
+    } else {
+      setExpandedPart(part);
+      onExpandPart(part); // Tell shell to fetch TOC if needed
+    }
   };
 
   const containerStyle: React.CSSProperties = isMobile ? {
@@ -109,6 +103,7 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, on
   return (
     <aside style={containerStyle}>
       <div style={{ width: isMobile ? 300 : 290, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+        {/* Header */}
         <div style={{ padding: "12px 12px 8px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text3)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 7 }}>
             Title 49 · Transportation
@@ -126,25 +121,20 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, on
           </div>
         </div>
 
+        {/* Parts list */}
         <div style={{ flex: 1, overflowY: "auto", padding: "6px 0" }}>
           {FMCSR_PARTS.map(({ part, title }) => {
             const isCurrentPart = part === currentPart;
             const isExpanded = expandedPart === part;
-
-            const handlePartClick = () => {
-              if (isExpanded) {
-                setExpandedPart(null);
-              } else {
-                setExpandedPart(part);
-              }
-            };
+            const partToc = allTocs.get(part) ?? null;
 
             return (
               <div key={part}>
-                <button onClick={handlePartClick} style={{
-                  width: "100%", border: "none", background: "none",
-                  cursor: "pointer", textAlign: "left", padding: 0,
-                }}>
+                {/* Part header — toggle only, never navigates */}
+                <button
+                  onClick={() => handlePartClick(part)}
+                  style={{ width: "100%", border: "none", background: "none", cursor: "pointer", textAlign: "left", padding: 0 }}
+                >
                   <div style={{
                     display: "flex", alignItems: "center", justifyContent: "space-between",
                     padding: "7px 12px",
@@ -177,22 +167,23 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, on
                   </div>
                 </button>
 
-                {isExpanded && expandedToc && (
+                {/* Expanded sections */}
+                {isExpanded && partToc && (
                   <div style={{ paddingBottom: 4 }}>
-                    {expandedToc.subparts.map((subpart) => {
-                      const expanded = isCurrentPart
-                        ? isSubpartExpanded(subpart.label)
-                        : true; // Non-current parts: show all subparts expanded
+                    {partToc.subparts.map((subpart) => {
+                      const expanded = isSubpartExpanded(subpart.label, part);
                       const hasActive = subpart.sections.some(s => s.section === currentSection);
                       return (
-                        <div key={subpart.label}>
+                        <div key={subpart.label || subpart.title}>
+                          {/* Subpart header */}
                           <button
                             onClick={() => toggleSubpart(subpart.label)}
                             style={{
                               width: "100%", display: "flex", alignItems: "center",
                               justifyContent: "space-between", padding: "5px 12px 5px 18px",
                               border: "none", background: "none", cursor: "pointer", textAlign: "left",
-                            }}>
+                            }}
+                          >
                             <span style={{
                               fontSize: 10, fontWeight: 600,
                               color: hasActive ? "var(--accent)" : "var(--text3)",
@@ -209,6 +200,8 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, on
                               <polyline points="6 9 12 15 18 9"/>
                             </svg>
                           </button>
+
+                          {/* Section links */}
                           {expanded && subpart.sections.map((sec) => {
                             const active = sec.section === currentSection;
                             return (
@@ -216,13 +209,9 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, on
                                 key={sec.section}
                                 href={`/regs/${sec.section}`}
                                 onClick={(e) => {
-                                  const secPart = sec.section.split(".")[0];
-                                  if (onNavigate && secPart === currentPart) {
-                                    e.preventDefault();
-                                    onNavigate(sec.section);
-                                    if (isMobile) onClose();
-                                  }
-                                  // For other parts, let the <a> do a full navigation
+                                  e.preventDefault();
+                                  onNavigate(sec.section);
+                                  if (isMobile) onClose();
                                 }}
                                 style={{ textDecoration: "none" }}
                               >
@@ -250,6 +239,13 @@ export function ReaderSidebar({ toc, currentSection, open, onClose, isMobile, on
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* Loading indicator when TOC not yet fetched */}
+                {isExpanded && !partToc && (
+                  <div style={{ padding: "8px 18px", fontSize: 11, color: "var(--text3)" }}>
+                    Loading…
                   </div>
                 )}
               </div>
