@@ -572,7 +572,7 @@ function parseParagraphs(xml: string): EcfrNode[] {
   const bodyMatch = xml.match(/<DIV8[^>]*>([\s\S]*)<\/DIV8>/);
   const body = bodyMatch ? bodyMatch[1] : xml;
 
-  const chunkRegex = /(<GPOTABLE[\s\S]*?<\/GPOTABLE>|<GPH[\s\S]*?<\/GPH>|<EXTRACT[\s\S]*?<\/EXTRACT>|<img[^>]*\/?>|<P>[\s\S]*?<\/P>|<FP[^>]*>[\s\S]*?<\/FP>)/gi;
+  const chunkRegex = /(<GPOTABLE[\s\S]*?<\/GPOTABLE>|<TABLE[\s\S]*?<\/TABLE>|<GPH[\s\S]*?<\/GPH>|<EXTRACT[\s\S]*?<\/EXTRACT>|<img[^>]*\/?>|<P>[\s\S]*?<\/P>|<FP[^>]*>[\s\S]*?<\/FP>)/gi;
   const chunks = body.match(chunkRegex) || [];
 
   for (const chunk of chunks) {
@@ -598,6 +598,53 @@ function parseParagraphs(xml: string): EcfrNode[] {
         let entMatch;
         while ((entMatch = entRegex.exec(rowMatch[1])) !== null) {
           cells.push(stripTags(entMatch[1]).trim());
+        }
+        if (cells.length) rows.push(cells);
+      }
+
+      if (headers.length || rows.length) {
+        nodes.push({ id: `t-${counter++}`, type: "table", text: "", level: 0, tableHeaders: headers, tableRows: rows });
+      }
+      continue;
+    }
+
+    // HTML TABLE — <TABLE> with <TR>/<TH>/<TD>
+    if (chunk.toUpperCase().startsWith("<TABLE")) {
+      const headers: string[] = [];
+      const rows: string[][] = [];
+
+      // Extract headers from <TH> tags in <THEAD> or first <TR>
+      const theadMatch = chunk.match(/<THEAD>([\s\S]*?)<\/THEAD>/i);
+      if (theadMatch) {
+        const thRegex = /<TH[^>]*>([\s\S]*?)<\/TH>/gi;
+        let thMatch;
+        while ((thMatch = thRegex.exec(theadMatch[1])) !== null) {
+          headers.push(stripTags(thMatch[1]).trim());
+        }
+      }
+
+      // Extract rows from <TBODY> or all <TR> tags
+      const tbodyMatch = chunk.match(/<TBODY>([\s\S]*?)<\/TBODY>/i);
+      const rowSource = tbodyMatch ? tbodyMatch[1] : chunk;
+      const trRegex = /<TR[^>]*>([\s\S]*?)<\/TR>/gi;
+      let trMatch;
+      while ((trMatch = trRegex.exec(rowSource)) !== null) {
+        const cells: string[] = [];
+        // Check for TH cells (in case headers are in body rows)
+        const hasOnlyTh = /<TH/i.test(trMatch[1]) && !/<TD/i.test(trMatch[1]);
+        if (hasOnlyTh && headers.length === 0) {
+          const thRegex2 = /<TH[^>]*>([\s\S]*?)<\/TH>/gi;
+          let th;
+          while ((th = thRegex2.exec(trMatch[1])) !== null) {
+            headers.push(stripTags(th[1]).trim());
+          }
+          continue;
+        }
+        // Extract TD cells
+        const tdRegex = /<TD[^>]*>([\s\S]*?)<\/TD>/gi;
+        let tdMatch;
+        while ((tdMatch = tdRegex.exec(trMatch[1])) !== null) {
+          cells.push(stripTags(tdMatch[1]).trim());
         }
         if (cells.length) rows.push(cells);
       }

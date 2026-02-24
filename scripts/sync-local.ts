@@ -10,12 +10,11 @@ const FMCSR_PARTS = [
   "390","391","392","393","394","395","396","397","398","399"
 ];
 
-// ── DB setup ─────────────────────────────────────────────────────────────────
-
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const db = new PrismaClient({ adapter });
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Import the parser dynamically since it uses @/ paths ─────────────────────
+// We duplicate the parser here to avoid path alias issues with tsx
 
 function stripTags(html: string): string {
   return html
@@ -44,9 +43,7 @@ function getLevelForLabel(label: string, lastAtLevel: Map<number, string>): numb
   const isMultiRoman = ROMANS.has(label) && label.length > 1;
   const isLower = /^[a-z]+$/.test(label);
   const isAmbiguous = AMBIGUOUS_ROMANS.has(label);
-
   if (isUpper) return 4;
-
   if (isMultiRoman) {
     const lastLevel3 = lastAtLevel.get(3);
     const lastLevel5 = lastAtLevel.get(5);
@@ -62,7 +59,6 @@ function getLevelForLabel(label: string, lastAtLevel: Map<number, string>): numb
     if (lastLevel5 || lastLevel6) return 6;
     return 3;
   }
-
   if (isDigit) {
     const lastLevel2 = lastAtLevel.get(2);
     const lastLevel4 = lastAtLevel.get(4);
@@ -75,7 +71,6 @@ function getLevelForLabel(label: string, lastAtLevel: Map<number, string>): numb
     }
     return 2;
   }
-
   if (isLower) {
     if (!isAmbiguous) return 1;
     if (continuesLevel1Sequence(label, lastAtLevel)) return 1;
@@ -97,7 +92,6 @@ function splitPackedParagraph(text: string): { label: string | undefined; text: 
   if (!outerMatch) return [{ label: undefined, text }];
   const outerLabel = outerMatch[1].trim();
   const rest = outerMatch[2];
-
   if (rest.startsWith("(")) {
     const doubleMatch = rest.match(/^\(([^)]{1,4})\)\s+(.*)/);
     if (doubleMatch) {
@@ -108,7 +102,6 @@ function splitPackedParagraph(text: string): { label: string | undefined; text: 
       }
     }
   }
-
   const innerMatch = rest.match(/^(.*?(?:\.|—|:|;))\s*(\([^)]{1,4}\))\s+(.+)/);
   if (innerMatch) {
     const intro = innerMatch[1].trim().replace(/[—:;]\s*$/, '').trim();
@@ -118,7 +111,6 @@ function splitPackedParagraph(text: string): { label: string | undefined; text: 
       return [{ label: outerLabel, text: intro }, ...splitPackedParagraph(`(${innerLabel}) ${innerText}`)];
     }
   }
-
   return [{ label: outerLabel, text: rest }];
 }
 
@@ -130,10 +122,11 @@ function parseParagraphs(xml: string): any[] {
   const bodyMatch = xml.match(/<DIV8[^>]*>([\s\S]*)<\/DIV8>/);
   const body = bodyMatch ? bodyMatch[1] : xml;
 
-  const chunkRegex = /(<GPOTABLE[\s\S]*?<\/GPOTABLE>|<GPH[\s\S]*?<\/GPH>|<EXTRACT[\s\S]*?<\/EXTRACT>|<img[^>]*\/?>|<P>[\s\S]*?<\/P>|<FP[^>]*>[\s\S]*?<\/FP>)/gi;
+  const chunkRegex = /(<GPOTABLE[\s\S]*?<\/GPOTABLE>|<TABLE[\s\S]*?<\/TABLE>|<GPH[\s\S]*?<\/GPH>|<EXTRACT[\s\S]*?<\/EXTRACT>|<img[^>]*\/?>|<P>[\s\S]*?<\/P>|<FP[^>]*>[\s\S]*?<\/FP>)/gi;
   const chunks = body.match(chunkRegex) || [];
 
   for (const chunk of chunks) {
+    // GPOTABLE
     if (chunk.startsWith("<GPOTABLE") || chunk.startsWith("<gpotable")) {
       const headers: string[] = [];
       const rows: string[][] = [];
@@ -154,11 +147,48 @@ function parseParagraphs(xml: string): any[] {
       }
       continue;
     }
+
+    // HTML TABLE
+    if (chunk.toUpperCase().startsWith("<TABLE")) {
+      const headers: string[] = [];
+      const rows: string[][] = [];
+      const theadMatch = chunk.match(/<THEAD>([\s\S]*?)<\/THEAD>/i);
+      if (theadMatch) {
+        const thRegex = /<TH[^>]*>([\s\S]*?)<\/TH>/gi;
+        let thMatch;
+        while ((thMatch = thRegex.exec(theadMatch[1])) !== null) headers.push(stripTags(thMatch[1]).trim());
+      }
+      const tbodyMatch = chunk.match(/<TBODY>([\s\S]*?)<\/TBODY>/i);
+      const rowSource = tbodyMatch ? tbodyMatch[1] : chunk;
+      const trRegex = /<TR[^>]*>([\s\S]*?)<\/TR>/gi;
+      let trMatch;
+      while ((trMatch = trRegex.exec(rowSource)) !== null) {
+        const cells: string[] = [];
+        const hasOnlyTh = /<TH/i.test(trMatch[1]) && !/<TD/i.test(trMatch[1]);
+        if (hasOnlyTh && headers.length === 0) {
+          const thRegex2 = /<TH[^>]*>([\s\S]*?)<\/TH>/gi;
+          let th;
+          while ((th = thRegex2.exec(trMatch[1])) !== null) headers.push(stripTags(th[1]).trim());
+          continue;
+        }
+        const tdRegex = /<TD[^>]*>([\s\S]*?)<\/TD>/gi;
+        let tdMatch;
+        while ((tdMatch = tdRegex.exec(trMatch[1])) !== null) cells.push(stripTags(tdMatch[1]).trim());
+        if (cells.length) rows.push(cells);
+      }
+      if (headers.length || rows.length) {
+        nodes.push({ id: `t-${counter++}`, type: "table", text: "", level: 0, tableHeaders: headers, tableRows: rows });
+      }
+      continue;
+    }
+
+    // IMAGE — <img>
     if (chunk.toLowerCase().startsWith("<img")) {
       const srcMatch = chunk.match(/src=["']([^"']+)["']/i);
       if (srcMatch) nodes.push({ id: `img-${counter++}`, type: "image", text: "", level: 0, imageSrc: srcMatch[1] });
       continue;
     }
+    // IMAGE — <GPH>
     if (chunk.toUpperCase().startsWith("<GPH")) {
       const gidMatch = chunk.match(/<GID>([\s\S]*?)<\/GID>/i);
       if (gidMatch) {
@@ -167,6 +197,7 @@ function parseParagraphs(xml: string): any[] {
       }
       continue;
     }
+    // EXTRACT
     if (chunk.toUpperCase().startsWith("<EXTRACT")) {
       const innerPs = chunk.match(/<P>[\s\S]*?<\/P>/gi) || [];
       for (const p of innerPs) {
@@ -175,7 +206,6 @@ function parseParagraphs(xml: string): any[] {
       }
       continue;
     }
-
     // FP or P
     const isFP = chunk.toUpperCase().startsWith("<FP");
     const isP = chunk.startsWith("<P>") || chunk.startsWith("<p>");
@@ -224,7 +254,7 @@ function parseXml(xml: string, part: string, section: string) {
   return { part, section, title, content, subpartLabel, subpartTitle };
 }
 
-// ── Main sync ────────────────────────────────────────────────────────────────
+// ── Main ─────────────────────────────────────────────────────────────────────
 
 async function getLatestDate(): Promise<string> {
   const res = await fetch(`${ECFR_BASE}/api/versioner/v1/titles`);
@@ -234,21 +264,36 @@ async function getLatestDate(): Promise<string> {
 }
 
 async function main() {
-  console.log("DB URL:", process.env.DATABASE_URL ? "set (" + process.env.DATABASE_URL.split("@")[1] + ")" : "NOT SET");
-  
-  // Test connection
-  try {
-    await db.$connect();
-    console.log("DB connected");
-  } catch (e) {
-    console.error("DB connection failed:", e);
-    process.exit(1);
-  }
+  console.log("DB URL:", process.env.DATABASE_URL ? "set" : "NOT SET");
+  await db.$connect();
+  console.log("DB connected");
 
   const date = await getLatestDate();
   console.log(`eCFR date: ${date}`);
 
-  // 1. Fetch title structure
+  // Check for --reparse flag: re-parse existing rawXml without re-fetching
+  const reparse = process.argv.includes('--reparse');
+
+  if (reparse) {
+    console.log("Re-parsing cached XML (no eCFR fetch)...");
+    const allCached = await db.cachedSection.findMany({ select: { section: true, part: true, rawXml: true } });
+    let ok = 0;
+    for (const row of allCached) {
+      if (!row.rawXml) continue;
+      const parsed = parseXml(row.rawXml, row.part, row.section);
+      await db.cachedSection.update({
+        where: { section: row.section },
+        data: { contentJson: JSON.stringify(parsed.content), title: parsed.title,
+          subpartLabel: parsed.subpartLabel ?? null, subpartTitle: parsed.subpartTitle ?? null },
+      });
+      ok++;
+    }
+    console.log(`Re-parsed ${ok} sections`);
+    await db.$disconnect();
+    return;
+  }
+
+  // Full sync
   console.log("Fetching title structure...");
   const structRes = await fetch(`${ECFR_BASE}/api/versioner/v1/structure/${date}/title-${TITLE}.json`);
   if (!structRes.ok) { console.error("Failed to fetch structure"); process.exit(1); }
@@ -265,9 +310,8 @@ async function main() {
 
   for (const part of FMCSR_PARTS) {
     const partNode = findPart(titleData, part);
-    if (!partNode) { console.log(`  Part ${part}: NOT FOUND in structure`); continue; }
+    if (!partNode) { console.log(`  Part ${part}: NOT FOUND`); continue; }
 
-    // Build TOC
     const subparts: any[] = [];
     let cur = { label: "", title: "General", sections: [] as any[] };
     function walk(node: any) {
@@ -286,15 +330,13 @@ async function main() {
 
     const partTitle = partNode.label_description || `Part ${part}`;
 
-    // Cache TOC
     await db.cachedPartToc.upsert({
       where: { part },
       create: { part, title: partTitle, tocJson: JSON.stringify(subparts), ecfrVersion: date },
       update: { title: partTitle, tocJson: JSON.stringify(subparts), ecfrVersion: date },
     });
 
-    // Fetch each section
-    const allSections = subparts.flatMap(sp => sp.sections);
+    const allSections = subparts.flatMap((sp: any) => sp.sections);
     console.log(`Part ${part}: ${allSections.length} sections`);
 
     let ok = 0, fail = 0;
@@ -311,8 +353,7 @@ async function main() {
           create: {
             part, section: sec.section, title: parsed.title,
             contentJson: JSON.stringify(parsed.content),
-            subpartLabel: parsed.subpartLabel ?? null,
-            subpartTitle: parsed.subpartTitle ?? null,
+            subpartLabel: parsed.subpartLabel ?? null, subpartTitle: parsed.subpartTitle ?? null,
             ecfrVersion: date, rawXml: xml,
           },
           update: {
@@ -322,7 +363,6 @@ async function main() {
           },
         });
         ok++;
-        // Small delay
         await new Promise(r => setTimeout(r, 100));
       } catch (e) {
         fail++;

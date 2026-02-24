@@ -57,9 +57,11 @@ function renderNode(node: EcfrNode) {
 
   // IMAGE
   if (node.type === "image") {
-    const src = node.imageSrc?.startsWith("http")
-      ? node.imageSrc
-      : `https://www.ecfr.gov${node.imageSrc}`;
+    // Images are cached in our DB and served via /api/ecfr-image?path=...
+    const imagePath = node.imageSrc?.startsWith("http")
+      ? new URL(node.imageSrc).pathname
+      : node.imageSrc;
+    const src = `/api/ecfr-image?path=${encodeURIComponent(imagePath || "")}`;
     return (
       <div key={node.id} style={{ margin: "20px 0", textAlign: "center" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
