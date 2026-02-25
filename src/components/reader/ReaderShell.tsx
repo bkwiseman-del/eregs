@@ -270,28 +270,94 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   const [toastMsg, setToastMsg] = useState("");
   const [toastKey, setToastKey] = useState(0);
   const localIdCounter = useRef(0);
+  const [isAuthed, setIsAuthed] = useState<boolean | null>(null); // null = unknown yet
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
     setToastKey(k => k + 1);
   }, []);
 
-  // Generate a local ID for annotations created without API
   const makeLocalId = () => `local-${++localIdCounter.current}-${Date.now()}`;
 
-  // Try to fetch annotations from API; if it fails (not logged in), start empty
+  // Replace a local ID with the real server ID in state
+  const reconcileId = useCallback((localId: string, serverId: string) => {
+    setAnnotations(prev => prev.map(a =>
+      a.id === localId ? { ...a, id: serverId } : a
+    ));
+    // Also update editingNote if it's the one being reconciled
+    setEditingNote(prev =>
+      prev && prev.id === localId ? { ...prev, id: serverId } : prev
+    );
+  }, []);
+
+  // Sync a local annotation to the server, reconcile ID on success
+  const syncToServer = useCallback(async (
+    localId: string,
+    body: Record<string, unknown>,
+  ) => {
+    try {
+      const res = await fetch("/api/annotations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.id && data.id !== localId) {
+          reconcileId(localId, data.id);
+        }
+        // If it was a toggle-delete, the response has { deleted: true, id }
+        // The local state already removed it, so nothing to reconcile
+        setIsAuthed(true);
+      } else if (res.status === 401) {
+        setIsAuthed(false);
+      }
+    } catch {
+      // Offline or network error — annotation stays local
+    }
+  }, [reconcileId]);
+
+  // Fetch annotations from API on section change; merge with any unsynced local annotations
   useEffect(() => {
+    const localAnnotations = annotations.filter(
+      a => a.id.startsWith("local-") && a.section === currentSectionId
+    );
+
     fetch(`/api/annotations?section=${currentSectionId}`)
       .then(r => {
         if (!r.ok) throw new Error("not authed");
         return r.json();
       })
-      .then(setAnnotations)
+      .then((serverAnnotations: Annotation[]) => {
+        setIsAuthed(true);
+        // Merge: server annotations + any local-only ones not yet synced
+        // De-duplicate by paragraphId + type (server wins if both exist)
+        const serverKeys = new Set(
+          serverAnnotations.map(a => `${a.paragraphId}:${a.type}`)
+        );
+        const unsyncedLocal = localAnnotations.filter(
+          a => !serverKeys.has(`${a.paragraphId}:${a.type}`)
+        );
+        setAnnotations([...serverAnnotations, ...unsyncedLocal]);
+
+        // Try to sync any remaining local annotations
+        for (const local of unsyncedLocal) {
+          syncToServer(local.id, {
+            type: local.type, paragraphId: local.paragraphId,
+            part: local.part, section: local.section,
+            note: local.note, regVersion: local.regVersion || "",
+          });
+        }
+      })
       .catch(() => {
-        // Not logged in or API error — use local state only
-        setAnnotations([]);
+        setIsAuthed(false);
+        // Not logged in — keep any existing local annotations for this section
+        // but clear server annotations from other sections
+        setAnnotations(prev => prev.filter(
+          a => a.id.startsWith("local-") || a.section === currentSectionId
+        ));
       });
-  }, [currentSectionId]);
+  }, [currentSectionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear selection when navigating
   useEffect(() => {
@@ -319,14 +385,24 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     );
   }, [selectedPids, annotations]);
 
-  // Highlight / Remove Highlight — local state first, then try API
+  // Highlight / Remove Highlight — local state first, reconcile with API
   const handleHighlight = useCallback(async () => {
     const pids = [...selectedPids];
     const removing = allSelectedHighlighted;
 
-    // Immediately update local state
     if (removing) {
+      // Capture IDs before removing from state (needed for API delete)
+      const toRemove = annotations.filter(
+        a => pids.includes(a.paragraphId) && a.type === "HIGHLIGHT"
+      );
       setAnnotations(prev => prev.filter(a => !(pids.includes(a.paragraphId) && a.type === "HIGHLIGHT")));
+
+      // Delete from server
+      for (const anno of toRemove) {
+        if (!anno.id.startsWith("local-")) {
+          fetch(`/api/annotations?id=${anno.id}`, { method: "DELETE" }).catch(() => {});
+        }
+      }
     } else {
       const newAnnotations: Annotation[] = pids
         .filter(pid => !annotations.some(a => a.paragraphId === pid && a.type === "HIGHLIGHT"))
@@ -342,6 +418,14 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
           updatedAt: new Date().toISOString(),
         }));
       setAnnotations(prev => [...prev, ...newAnnotations]);
+
+      // Sync each to server, reconcile IDs
+      for (const anno of newAnnotations) {
+        syncToServer(anno.id, {
+          type: "HIGHLIGHT", paragraphId: anno.paragraphId,
+          part: currentPart, section: currentSectionId, regVersion: "",
+        });
+      }
     }
 
     const msg = removing
@@ -349,26 +433,14 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       : `${pids.length === 1 ? "1 paragraph" : `${pids.length} paragraphs`} highlighted`;
     showToast(msg);
     clearSelection();
-
-    // Try API sync in background (fire and forget)
-    for (const pid of pids) {
-      fetch("/api/annotations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "HIGHLIGHT", paragraphId: pid,
-          part: currentPart, section: currentSectionId, regVersion: "",
-        }),
-      }).catch(() => {});
-    }
-  }, [selectedPids, currentPart, currentSectionId, allSelectedHighlighted, annotations, showToast, clearSelection]);
+  }, [selectedPids, currentPart, currentSectionId, allSelectedHighlighted, annotations, showToast, clearSelection, syncToServer]);
 
   // Edit existing note — opens inline in ActionBar
   const handleEditNote = useCallback((annotation: Annotation) => {
     setEditingNote(annotation);
   }, []);
 
-  // Save note — local state first, then try API
+  // Save note — local state first, reconcile with API
   const handleSaveNote = useCallback(async (text: string) => {
     if (editingNote) {
       // Update existing — local first
@@ -377,8 +449,15 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       ));
       showToast("Note updated");
 
-      // Try API
-      if (!editingNote.id.startsWith("local-")) {
+      if (editingNote.id.startsWith("local-")) {
+        // Never synced — try to create on server
+        syncToServer(editingNote.id, {
+          type: editingNote.type, paragraphId: editingNote.paragraphId,
+          part: editingNote.part, section: editingNote.section,
+          note: text, regVersion: editingNote.regVersion || "",
+        });
+      } else {
+        // Already on server — PATCH
         fetch("/api/annotations", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -403,22 +482,19 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       showToast("Note saved");
       clearSelection();
 
-      // Try API
-      for (const pid of pids) {
-        fetch("/api/annotations", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "NOTE", paragraphId: pid,
-            part: currentPart, section: currentSectionId, note: text, regVersion: "",
-          }),
-        }).catch(() => {});
+      // Sync each to server, reconcile IDs
+      for (const anno of newAnnotations) {
+        syncToServer(anno.id, {
+          type: "NOTE", paragraphId: anno.paragraphId,
+          part: currentPart, section: currentSectionId,
+          note: text, regVersion: "",
+        });
       }
     }
     setEditingNote(null);
-  }, [editingNote, selectedPids, currentPart, currentSectionId, showToast, clearSelection]);
+  }, [editingNote, selectedPids, currentPart, currentSectionId, showToast, clearSelection, syncToServer]);
 
-  // Delete note — local first
+  // Delete note — local first, then server
   const handleDeleteNote = useCallback(async () => {
     if (!editingNote) return;
     setAnnotations(prev => prev.filter(a => a.id !== editingNote.id));
