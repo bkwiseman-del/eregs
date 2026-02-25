@@ -85,8 +85,8 @@ export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSideba
         </>
       )}
 
-      {/* Insights toggle — paid only */}
-      {isPaid && (
+      {/* Insights toggle — locked for free users */}
+      {isPaid ? (
         <button onClick={onToggleInsights} title="Insights panel" style={{
           width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center",
           borderRadius: 8, border: "1px solid", cursor: "pointer", flexShrink: 0,
@@ -96,6 +96,21 @@ export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSideba
         }}>
           <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 00-4 12.74V17a1 1 0 001 1h6a1 1 0 001-1v-2.26A7 7 0 0012 2z"/></svg>
         </button>
+      ) : (
+        <Link href="/insights" title="Insights (Pro)" style={{ textDecoration: "none" }}>
+          <div style={{
+            width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center",
+            borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer", flexShrink: 0,
+            background: "var(--white)", color: "var(--text3)", transition: "all 0.15s",
+            position: "relative", opacity: 0.5,
+          }}>
+            <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 00-4 12.74V17a1 1 0 001 1h6a1 1 0 001-1v-2.26A7 7 0 0012 2z"/></svg>
+            <svg width="7" height="7" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24" style={{ position: "absolute", top: 3, right: 3 }}>
+              <rect x="3" y="11" width="18" height="11" rx="2" />
+              <path d="M7 11V7a5 5 0 0110 0v4" />
+            </svg>
+          </div>
+        </Link>
       )}
 
       {/* Bookmark — paid only */}
