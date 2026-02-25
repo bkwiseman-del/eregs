@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { NavRail } from "@/components/reader/NavRail";
+import { MobileBottomTabs } from "@/components/shared/MobileBottomTabs";
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(false);
@@ -96,43 +97,8 @@ export function AnnotationPageLayout({
       </div>
 
       {/* Mobile bottom tabs */}
-      {isMobile && <MobileBottomTabs />}
+      {isMobile && <MobileBottomTabs isPaid={isPaid} />}
     </div>
   );
 }
 
-function MobileBottomTabs() {
-  // Simple mobile nav bar matching the reader's bottom tabs
-  const tabs = [
-    { label: "Regs", href: "/regs/390.1", icon: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg> },
-    { label: "Notes", href: "/notes", icon: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> },
-    { label: "Highlights", href: "/highlights", icon: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> },
-    { label: "Saved", href: "/saved", icon: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg> },
-  ];
-
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const pathname = typeof window !== "undefined" ? window.location.pathname : "";
-
-  return (
-    <nav style={{
-      position: "fixed", bottom: 0, left: 0, right: 0, height: 54,
-      background: "var(--white)", borderTop: "1px solid var(--border)",
-      display: "flex", zIndex: 200, paddingBottom: "env(safe-area-inset-bottom)",
-    }}>
-      {tabs.map(tab => {
-        const active = pathname === tab.href || (tab.href.startsWith("/regs") && pathname.startsWith("/regs"));
-        return (
-          <a key={tab.label} href={tab.href} style={{
-            flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
-            justifyContent: "center", gap: 3, textDecoration: "none",
-            color: active ? "var(--accent)" : "var(--text3)",
-            fontSize: 10, fontWeight: 500, letterSpacing: "0.02em",
-          }}>
-            {tab.icon}
-            {tab.label}
-          </a>
-        );
-      })}
-    </nav>
-  );
-}

@@ -12,6 +12,7 @@ import { InsightsPanel } from "./InsightsPanel";
 import { ActionBar } from "./ActionBar";
 import { ResizeHandle } from "./ResizeHandle";
 import { Toast } from "./Toast";
+import { MobileBottomTabs } from "@/components/shared/MobileBottomTabs";
 
 // ── DATA STORE ──────────────────────────────────────────────────────────────
 
@@ -572,7 +573,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
 
       <div style={{
         position: "fixed",
-        top: "var(--nav-h)", bottom: 0, left: 0, right: 0,
+        top: "var(--nav-h)", bottom: isMobile ? 54 : 0, left: 0, right: 0,
         display: "flex", overflow: "hidden"
       }}>
         {!isMobile && <NavRail isPaid={isAuthed === true} />}
@@ -669,6 +670,9 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
           />
         )}
       </div>
+
+      {/* Mobile bottom tabs */}
+      {isMobile && <MobileBottomTabs isPaid={isAuthed === true} />}
 
       {/* Annotation UI */}
       <ActionBar
