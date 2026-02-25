@@ -1,0 +1,136 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { NavRail } from "@/components/reader/NavRail";
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setMobile(window.innerWidth < 900);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  return mobile;
+}
+
+export function AnnotationPageLayout({
+  children,
+  title,
+  icon,
+}: {
+  children: React.ReactNode;
+  title: string;
+  icon: React.ReactNode;
+}) {
+  const isMobile = useIsMobile();
+
+  return (
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/* Top nav — simplified for annotation pages */}
+      <nav style={{
+        position: "fixed", top: 0, left: 0, right: 0, height: "var(--nav-h)",
+        background: "var(--white)", borderBottom: "1px solid var(--border)",
+        display: "flex", alignItems: "center", padding: "0 14px", gap: 8, zIndex: 200,
+      }}>
+        <a href="/" style={{ flexShrink: 0, display: "flex", alignItems: "center", textDecoration: "none" }}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 626 224" height="26" style={{ display: "block", flexShrink: 0 }}>
+            <g>
+              <path fill="none" d="M170.4,53.6h-27v31.4h28.2c2.8,0,5.3-1.4,7.7-4.1s3.6-6.6,3.6-11.5-1.4-9-4.1-11.6c-2.9-2.8-5.7-4.2-8.4-4.2Z"/>
+              <path fill="none" d="M295.7,86.8c-3.5-3-8-4.5-13.5-4.5s-10,1.5-13.5,4.5-5.7,7.1-6.4,12.4h39.9c-.9-5.3-3-9.4-6.5-12.4Z"/>
+              <path fill="none" d="M52.7,82.8c-3.1,0-5.9,1.1-8.4,3.5-2.5,2.4-3.8,5.1-3.9,8.2,0,3.1,1,6.2,3.2,9.2l18.1-17.2c-2.9-2.4-5.9-3.6-9-3.7Z"/>
+              <path fill="none" d="M416.1,91.7c-4.2-2.9-8.6-4.3-13.2-4.3s-5.9.6-8.6,2c-2.7,1.3-5,3-7,5.2-2,2.1-3.5,4.7-4.6,7.6-1.1,3-1.6,6.1-1.6,9.4,0,6.7,2.2,12.2,6.6,16.3s10.1,6.2,17,6.2,8.3-.9,11.6-2.8c3.3-1.9,6.4-4.6,9.3-8.3v-19.4c-2.1-5.1-5.3-9-9.5-11.9h0Z"/>
+              <path fill="none" d="M525.5,129.4c-2.4-1.4-7-3-13.9-4.7-8.6-2.2-15.7-4.4-21.4-6.5-5.7-2.1-10.4-4.4-14-6.9-3.1-2.1-5.5-4.5-7-7.1v36.6l9.9-15.6c7.5,4.5,14.7,8,21.7,10.5s13.3,3.7,19.1,3.7,9.2-1.7,9.2-5.2c0-1.7-1.2-3.4-3.6-4.8h0Z"/>
+              <path fill="#000" d="M568.7,119.2c-1.5-3.4-4.1-6.4-7.7-9.1-3.6-2.7-8.4-5.2-14.3-7.4-6-2.3-13.3-4.4-22-6.5-7.2-1.6-12-3.1-14.4-4.4s-3.7-3-3.7-5,.8-3.3,2.5-4.2c1.7-.9,3.8-1.3,6.4-1.3,4.4,0,9.2.9,14.2,2.8s11.3,5,18.8,9.4l16.5-23.6c-8.1-6.3-16.2-10.5-24.2-12.6s-16.5-3.1-25.3-3.1-13.8.9-19.8,2.8c-6,1.9-11.2,4.5-15.6,7.9-4.4,3.4-7.8,7.5-10.2,12.2-.3.5-.5,1-.7,1.5v-22.1h-37.8v16.1c-3.8-5.9-9-10.4-15.6-13.5s-14.2-4.6-22.9-4.6-15.8,1.4-22.7,4.2c-6.9,2.8-12.8,6.7-17.8,11.6-4.1,4.1-7.5,8.9-10.1,14.3-2.7-4.9-6.1-9.3-10.3-13.2-5.6-5.2-12.5-9.3-20.7-12.4-8.3-3.1-17.7-4.6-28.4-4.6s-20.4,1.5-28.5,4.6c-8.2,3.1-15.1,7.2-20.6,12.5-2.4,2.3-4.6,4.7-6.4,7.3.6-3.1.9-6.3.9-9.5,0-6.2-1.4-12.3-4.1-18.4-2.8-6.1-6.5-11.5-11.4-16.3-4.8-4.7-10.6-8.6-17.3-11.5s-14.1-4.4-22-4.4h-74.9v21.3h0l-.7,49.4-20.3,10.4c1.1,2.4,1.1,5,.2,7.8-1,2.8-2.5,5.2-4.7,7.3-2.3,2.2-5,3.5-8.2,4-3.2.5-6.3-.6-9.4-3.4l38.4-36.5c-.7-1-1.5-2.1-2.4-3.3-.9-1.2-1.9-2.3-2.9-3.4-3.7-3.9-7.8-6.9-12.4-9.2s-9.5-3.6-14.6-3.9c-5.1-.3-10.2.6-15.5,2.5-5.3,2-10.3,5.2-15.2,9.8-4.9,4.7-8.5,9.6-10.7,14.7s-3.3,10.3-3.2,15.4c0,5.1,1.1,10.1,3.3,15,2.2,4.9,5.2,9.3,9,13.4,3.6,3.8,7.7,6.8,12.2,8.9s9.4,3.4,14.4,3.6c5,.2,10.2-.7,15.4-2.7,5.2-2,10.2-5.3,15-9.8,6.7-6.4,11-13.2,13-20.4,0-.5.2-1,.3-1.4.7-2.1,1.2-4.3,1.7-6.6,7.3-35.9,3.7.2,3.7.2,0,0,8.4-8.4,10.8-24s2.4,26.4-9.6,44.4,4.8,2.4,9.6-12c4.5-13.5,2.7,26.6-17.2,54.4h0v.3h44.7v-44.9h16.7l28.7,44.9h50.4l-34.4-53.8c5.4-3.4,9.9-7.6,13.6-12.5-1,4.4-1.5,8.9-1.5,13.5,0,7.3,1.4,14.2,4.4,20.8,2.9,6.6,7.1,12.4,12.7,17.5,5.6,5.1,12.5,9.1,20.7,12,8.3,3,17.6,4.4,28.2,4.4s27.3-2.7,37.5-8.2,17.7-12.6,22.6-21.2l-36.9-9.4c-1.4,3.4-4.2,6.1-8.4,8s-8.7,2.9-13.4,2.9-9.7-1.3-14-3.8-6.6-6.7-7.1-12.5h74.7c.6,3.2,1.5,6.3,2.6,9.3,2.5,6.6,6.1,12.3,10.7,17.2s10.1,8.7,16.6,11.5,13.6,4.2,21.4,4.2,14.9-1.4,21.4-4.1c6.5-2.7,11.5-7,15-12.8v7c0,4.8-.8,8.9-2.4,12.4-1.6,3.4-3.8,6.2-6.5,8.3-2.8,2.1-5.9,3.7-9.5,4.6-3.6,1-7.4,1.4-11.4,1.4-7,0-13.6-1.3-19.8-3.8-6.2-2.5-11.5-5.7-15.9-9.4l-22.8,21.6c7.3,6.7,15.7,11.9,25.2,15.4,9.5,3.6,20.6,5.4,33.5,5.4s21-1.3,30-4,16.7-6.4,23.1-11.2,11.4-10.6,14.9-17.5,5.3-14.6,5.3-23.1v-2.4c6,4.1,12.9,7.3,20.7,9.7,10.1,3.1,20.4,4.6,30.9,4.6s14.8-.8,21-2.5c6.2-1.6,11.5-4,15.8-7.2s7.7-6.9,10-11.3c2.3-4.4,3.4-9.4,3.4-15s-.8-8.3-2.3-11.7h0ZM40.4,94.5c0-3.1,1.4-5.8,3.9-8.2,2.5-2.4,5.3-3.5,8.4-3.5s6.1,1.3,9,3.7l-18.1,17.2c-2.2-3.1-3.3-6.2-3.2-9.2ZM179.2,80.8c-2.4,2.8-4.9,4.1-7.7,4.1h-28.2v-31.3h27c2.8,0,5.5,1.3,8.3,4s4.1,6.6,4.1,11.6-1.1,8.9-3.5,11.6h0ZM262.2,99.2c.8-5.2,2.9-9.3,6.4-12.4,3.5-3,8-4.5,13.5-4.5s10,1.5,13.5,4.5,5.7,7.1,6.4,12.4h-39.8ZM425.6,122.8c-2.9,3.7-6,6.5-9.3,8.3-3.3,1.9-7.1,2.8-11.6,2.8-6.9,0-12.5-2.1-17-6.2-4.4-4.1-6.6-9.5-6.6-16.3s.5-6.4,1.6-9.4,2.6-5.5,4.6-7.6,4.3-3.8,7-5.2c2.7-1.3,5.5-2,8.6-2,4.6,0,9,1.4,13.2,4.3s7.4,6.8,9.5,11.7v19.6h0ZM519.9,139.5c-5.8,0-12.2-1.2-19.1-3.7-7-2.5-14.2-6-21.7-10.5l-9.9,15.6v-36.6c1.6,2.6,3.9,4.9,7,7.1,3.6,2.5,8.3,4.8,14,6.9s12.9,4.3,21.4,6.5c6.9,1.8,11.5,3.4,13.9,4.7s3.6,3,3.6,4.9c0,3.4-3.1,5.1-9.2,5.1h0Z"/>
+            </g>
+            <path fill="#000" d="M586.7,59.5c0,5.6-4.4,10-10.1,10s-10.1-4.4-10.1-10,4.5-9.8,10.1-9.8,10.1,4.4,10.1,9.8ZM569,59.5c0,4.4,3.2,7.9,7.7,7.9s7.5-3.5,7.5-7.8-3.2-7.9-7.6-7.9-7.6,3.5-7.6,7.9h0ZM575,64.7h-2.3v-9.8c.9-.2,2.2-.3,3.8-.3s2.7.3,3.4.7c.5.4,1,1.2,1,2.2s-.8,1.9-2,2.3h0c1,.5,1.5,1.2,1.8,2.5.3,1.5.5,2.1.7,2.5h-2.5c-.3-.4-.5-1.3-.8-2.4-.2-1.1-.8-1.6-2-1.6h-1.1v4h0ZM575.1,59.1h1.1c1.3,0,2.3-.4,2.3-1.4s-.7-1.5-2.1-1.5-1,0-1.3,0v2.8Z"/>
+          </svg>
+        </a>
+
+        {/* Page title */}
+        <div style={{
+          flex: 1, display: "flex", alignItems: "center", gap: 8,
+          marginLeft: 6, minWidth: 0,
+        }}>
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 28, height: 28, borderRadius: 7,
+            background: "var(--accent-bg)", color: "var(--accent)",
+            flexShrink: 0,
+          }}>
+            {icon}
+          </div>
+          <span style={{
+            fontSize: 14, fontWeight: 600, color: "var(--text)",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}>
+            {title}
+          </span>
+        </div>
+
+        {/* Avatar */}
+        <div style={{
+          width: 32, height: 32, borderRadius: "50%",
+          background: "linear-gradient(135deg, var(--accent), #a34f18)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 11, fontWeight: 600, color: "white", flexShrink: 0,
+        }}>
+          JD
+        </div>
+      </nav>
+
+      {/* Body */}
+      <div style={{
+        position: "fixed", top: "var(--nav-h)", bottom: 0, left: 0, right: 0,
+        display: "flex", overflow: "hidden",
+      }}>
+        {!isMobile && <NavRail />}
+        <main style={{
+          flex: 1, overflowY: "auto", minWidth: 0, background: "var(--bg)",
+          WebkitOverflowScrolling: "touch",
+        }}>
+          {children}
+        </main>
+      </div>
+
+      {/* Mobile bottom tabs */}
+      {isMobile && <MobileBottomTabs />}
+    </div>
+  );
+}
+
+function MobileBottomTabs() {
+  // Simple mobile nav bar matching the reader's bottom tabs
+  const tabs = [
+    { label: "Regs", href: "/regs/390.1", icon: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg> },
+    { label: "Notes", href: "/notes", icon: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> },
+    { label: "Highlights", href: "/highlights", icon: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> },
+    { label: "Saved", href: "/saved", icon: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg> },
+  ];
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const pathname = typeof window !== "undefined" ? window.location.pathname : "";
+
+  return (
+    <nav style={{
+      position: "fixed", bottom: 0, left: 0, right: 0, height: 54,
+      background: "var(--white)", borderTop: "1px solid var(--border)",
+      display: "flex", zIndex: 200, paddingBottom: "env(safe-area-inset-bottom)",
+    }}>
+      {tabs.map(tab => {
+        const active = pathname === tab.href || (tab.href.startsWith("/regs") && pathname.startsWith("/regs"));
+        return (
+          <a key={tab.label} href={tab.href} style={{
+            flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+            justifyContent: "center", gap: 3, textDecoration: "none",
+            color: active ? "var(--accent)" : "var(--text3)",
+            fontSize: 10, fontWeight: 500, letterSpacing: "0.02em",
+          }}>
+            {tab.icon}
+            {tab.label}
+          </a>
+        );
+      })}
+    </nav>
+  );
+}

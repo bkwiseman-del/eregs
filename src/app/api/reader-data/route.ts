@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       select: { section: true, title: true, contentJson: true, subpartLabel: true, subpartTitle: true },
     });
 
-    const sections = rows.map(s => ({
+    const sections = rows.map((s: typeof rows[number]) => ({
       part,
       section: s.section,
       title: s.title,
