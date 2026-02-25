@@ -97,7 +97,7 @@ export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSideba
           <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 00-4 12.74V17a1 1 0 001 1h6a1 1 0 001-1v-2.26A7 7 0 0012 2z"/></svg>
         </button>
       ) : (
-        <Link href="/login" title="Insights (Pro)" style={{ textDecoration: "none" }}>
+        <Link href="/insights" title="Insights (Pro)" style={{ textDecoration: "none" }}>
           <div style={{
             width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center",
             borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer", flexShrink: 0,
