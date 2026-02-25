@@ -43,11 +43,7 @@ const navItems: NavItem[] = [
   },
 ];
 
-interface Props {
-  isPaid?: boolean;
-}
-
-export function NavRail({ isPaid = false }: Props) {
+export function NavRail({ isPaid = false }: { isPaid?: boolean }) {
   const pathname = usePathname();
   const isRegs = pathname.startsWith("/regs");
 
@@ -59,7 +55,7 @@ export function NavRail({ isPaid = false }: Props) {
       padding: "8px 0 16px", gap: 2, zIndex: 10
     }}>
       {/* Mini truck logo */}
-      <Link href="/dashboard" style={{ textDecoration: "none", marginBottom: 8 }}>
+      <Link href={isPaid ? "/dashboard" : "/regs/390.1"} style={{ textDecoration: "none", marginBottom: 8 }}>
         <div style={{
           width: 36, height: 36, display: "flex", alignItems: "center",
           justifyContent: "center", borderRadius: 8, transition: "background .15s"
@@ -98,28 +94,27 @@ export function NavRail({ isPaid = false }: Props) {
         );
       })}
 
-      <div style={{ width: 28, height: 1, background: "var(--border)", margin: "4px 0" }} />
+      {isPaid && (
+        <>
+          <div style={{ width: 28, height: 1, background: "var(--border)", margin: "4px 0" }} />
 
-      {/* Fleet — also pro-only */}
-      <Link href="/fleet" title={isPaid ? "Fleet Dashboard" : "Fleet Dashboard (Pro)"} style={{ textDecoration: "none" }}>
-        <div style={{
-          width: 44, display: "flex", flexDirection: "column", alignItems: "center",
-          gap: 3, padding: "7px 0", borderRadius: 8, cursor: "pointer",
-          position: "relative",
-          color: isPaid ? "var(--text3)" : "var(--border2)",
-          opacity: isPaid ? 1 : 0.55,
-          transition: "all .15s",
-        }}>
-          <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-          <span style={{ fontSize: 9, fontWeight: 500 }}>Fleet</span>
-          {!isPaid && lockIcon}
-        </div>
-      </Link>
+          <Link href="/fleet" title="Fleet Dashboard" style={{ textDecoration: "none" }}>
+            <div style={{
+              width: 44, display: "flex", flexDirection: "column", alignItems: "center",
+              gap: 3, padding: "7px 0", borderRadius: 8, cursor: "pointer",
+              color: "var(--text3)", transition: "all .15s"
+            }}>
+              <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              <span style={{ fontSize: 9, fontWeight: 500 }}>Fleet</span>
+            </div>
+          </Link>
+        </>
+      )}
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* Avatar or sign-in prompt */}
+      {/* Avatar (paid) or sign-in icon (free) */}
       {isPaid ? (
         <div style={{
           width: 26, height: 26, borderRadius: "50%",
@@ -130,12 +125,12 @@ export function NavRail({ isPaid = false }: Props) {
       ) : (
         <Link href="/login" title="Sign in" style={{ textDecoration: "none" }}>
           <div style={{
-            width: 26, height: 26, borderRadius: "50%",
+            width: 30, height: 30, borderRadius: "50%",
             background: "var(--bg2)", border: "1px solid var(--border)",
             display: "flex", alignItems: "center", justifyContent: "center",
             cursor: "pointer",
           }}>
-            <svg width="13" height="13" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24">
+            <svg width="14" height="14" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24">
               <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
               <circle cx="12" cy="7" r="4"/>
             </svg>
