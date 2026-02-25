@@ -567,6 +567,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         onToggleToc={!isMobile ? toggleTocCollapse : undefined}
         tocCollapsed={tocCollapsed}
         isMobile={isMobile}
+        isPaid={isAuthed === true}
       />
 
       <div style={{
@@ -651,20 +652,22 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
           />
         </main>
 
-        {/* Desktop insights with resize handle */}
-        {!isMobile && insightsOpen && (
+        {/* Desktop insights with resize handle — Pro only */}
+        {isAuthed === true && !isMobile && insightsOpen && (
           <ResizeHandle
             side="right"
             onResize={handleInsResize}
           />
         )}
 
-        <InsightsPanel
-          section={currentSection}
-          open={insightsOpen}
-          onClose={() => setInsightsOpen(false)}
-          width={insWidth}
-        />
+        {isAuthed === true && (
+          <InsightsPanel
+            section={currentSection}
+            open={insightsOpen}
+            onClose={() => setInsightsOpen(false)}
+            width={insWidth}
+          />
+        )}
       </div>
 
       {/* Annotation UI */}

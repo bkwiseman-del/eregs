@@ -11,9 +11,10 @@ interface Props {
   onToggleToc?: () => void;     // Desktop: collapse/expand TOC
   tocCollapsed?: boolean;
   isMobile: boolean;
+  isPaid?: boolean;
 }
 
-export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSidebar, onToggleToc, tocCollapsed, isMobile }: Props) {
+export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSidebar, onToggleToc, tocCollapsed, isMobile, isPaid = false }: Props) {
   return (
     <nav style={{
       position: "fixed", top: 0, left: 0, right: 0, height: "var(--nav-h)",
@@ -84,25 +85,59 @@ export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSideba
         </>
       )}
 
-      {/* Insights toggle */}
-      <button onClick={onToggleInsights} title="Insights panel" style={{
-        width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center",
-        borderRadius: 8, border: "1px solid", cursor: "pointer", flexShrink: 0,
-        background: insightsOpen ? "var(--accent-bg)" : "var(--white)",
-        borderColor: insightsOpen ? "var(--accent-border)" : "var(--border)",
-        color: insightsOpen ? "var(--accent)" : "var(--text2)", transition: "all 0.15s"
-      }}>
-        <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 00-4 12.74V17a1 1 0 001 1h6a1 1 0 001-1v-2.26A7 7 0 0012 2z"/></svg>
-      </button>
+      {/* Insights toggle — locked for free users */}
+      {isPaid ? (
+        <button onClick={onToggleInsights} title="Insights panel" style={{
+          width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center",
+          borderRadius: 8, border: "1px solid", cursor: "pointer", flexShrink: 0,
+          background: insightsOpen ? "var(--accent-bg)" : "var(--white)",
+          borderColor: insightsOpen ? "var(--accent-border)" : "var(--border)",
+          color: insightsOpen ? "var(--accent)" : "var(--text2)", transition: "all 0.15s"
+        }}>
+          <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 00-4 12.74V17a1 1 0 001 1h6a1 1 0 001-1v-2.26A7 7 0 0012 2z"/></svg>
+        </button>
+      ) : (
+        <Link href="/login" title="Insights (Pro)" style={{ textDecoration: "none" }}>
+          <div style={{
+            width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center",
+            borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer", flexShrink: 0,
+            background: "var(--white)", color: "var(--border2)", transition: "all 0.15s",
+            position: "relative", opacity: 0.55,
+          }}>
+            <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 00-4 12.74V17a1 1 0 001 1h6a1 1 0 001-1v-2.26A7 7 0 0012 2z"/></svg>
+            <svg width="7" height="7" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24" style={{ position: "absolute", top: 3, right: 3 }}>
+              <rect x="3" y="11" width="18" height="11" rx="2" />
+              <path d="M7 11V7a5 5 0 0110 0v4" />
+            </svg>
+          </div>
+        </Link>
+      )}
 
-      {/* Bookmark */}
-      <button title="Bookmark" style={{
-        width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center",
-        borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer", flexShrink: 0,
-        background: "var(--white)", color: "var(--text2)", transition: "all 0.15s"
-      }}>
-        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
-      </button>
+      {/* Bookmark — locked for free users */}
+      {isPaid ? (
+        <button title="Bookmark" style={{
+          width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center",
+          borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer", flexShrink: 0,
+          background: "var(--white)", color: "var(--text2)", transition: "all 0.15s"
+        }}>
+          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+        </button>
+      ) : (
+        <Link href="/saved" title="Saved (Pro)" style={{ textDecoration: "none" }}>
+          <div style={{
+            width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center",
+            borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer", flexShrink: 0,
+            background: "var(--white)", color: "var(--border2)", transition: "all 0.15s",
+            position: "relative", opacity: 0.55,
+          }}>
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+            <svg width="7" height="7" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24" style={{ position: "absolute", top: 3, right: 3 }}>
+              <rect x="3" y="11" width="18" height="11" rx="2" />
+              <path d="M7 11V7a5 5 0 0110 0v4" />
+            </svg>
+          </div>
+        </Link>
+      )}
     </nav>
   );
 }
