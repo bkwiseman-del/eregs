@@ -574,7 +574,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         top: "var(--nav-h)", bottom: 0, left: 0, right: 0,
         display: "flex", overflow: "hidden"
       }}>
-        {!isMobile && <NavRail />}
+        {!isMobile && <NavRail isPaid={isAuthed === true} />}
 
         {/* Desktop TOC with resize handle */}
         {!isMobile && !tocCollapsed && (

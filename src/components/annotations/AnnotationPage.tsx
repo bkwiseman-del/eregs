@@ -98,7 +98,7 @@ export function AnnotationPage({ pageType }: { pageType: PageType }) {
   }, [config.apiType]);
 
   return (
-    <AnnotationPageLayout title={config.title} icon={config.icon}>
+    <AnnotationPageLayout title={config.title} icon={config.icon} isPaid={authState === "authed"}>
       {authState === "loading" ? (
         <div style={{ padding: "80px 20px", textAlign: "center" }}>
           <div style={{

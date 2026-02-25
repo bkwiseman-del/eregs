@@ -18,10 +18,12 @@ export function AnnotationPageLayout({
   children,
   title,
   icon,
+  isPaid = false,
 }: {
   children: React.ReactNode;
   title: string;
   icon: React.ReactNode;
+  isPaid?: boolean;
 }) {
   const isMobile = useIsMobile();
 
@@ -84,7 +86,7 @@ export function AnnotationPageLayout({
         position: "fixed", top: "var(--nav-h)", bottom: 0, left: 0, right: 0,
         display: "flex", overflow: "hidden",
       }}>
-        {!isMobile && <NavRail />}
+        {!isMobile && <NavRail isPaid={isPaid} />}
         <main style={{
           flex: 1, overflowY: "auto", minWidth: 0, background: "var(--bg)",
           WebkitOverflowScrolling: "touch",
