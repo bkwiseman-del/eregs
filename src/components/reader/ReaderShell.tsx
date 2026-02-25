@@ -12,6 +12,7 @@ import { InsightsPanel } from "./InsightsPanel";
 import { ActionBar } from "./ActionBar";
 import { ResizeHandle } from "./ResizeHandle";
 import { Toast } from "./Toast";
+import { ProBanner } from "./ProBanner";
 import { MobileBottomTabs } from "@/components/shared/MobileBottomTabs";
 
 // ── DATA STORE ──────────────────────────────────────────────────────────────
@@ -642,6 +643,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         )}
 
         <main ref={mainRef} style={{ flex: 1, overflowY: "auto", minWidth: 0, background: "var(--bg)" }}>
+          {isAuthed !== true && <ProBanner />}
           <ReaderContent
             section={currentSection}
             adjacent={adjacent}
