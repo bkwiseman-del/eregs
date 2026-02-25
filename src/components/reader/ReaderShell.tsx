@@ -680,6 +680,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         onDeleteNote={handleDeleteNote}
         onCancelEdit={() => setEditingNote(null)}
         paragraphPreview={noteSheetPreview}
+        isPaid={isAuthed === true}
       />
 
       <Toast message={toastMsg} visible={toastKey > 0} key={toastKey} />
