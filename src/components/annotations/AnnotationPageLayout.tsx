@@ -17,20 +17,16 @@ function useIsMobile() {
 
 export function AnnotationPageLayout({
   children,
-  title,
-  icon,
   isPaid = false,
 }: {
   children: React.ReactNode;
-  title: string;
-  icon: React.ReactNode;
   isPaid?: boolean;
 }) {
   const isMobile = useIsMobile();
 
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Top nav — simplified for annotation pages */}
+      {/* Top nav — just logo */}
       <nav style={{
         position: "fixed", top: 0, left: 0, right: 0, height: "var(--nav-h)",
         background: "var(--white)", borderBottom: "1px solid var(--border)",
@@ -50,36 +46,19 @@ export function AnnotationPageLayout({
           </svg>
         </a>
 
-        {/* Page title */}
-        <div style={{
-          flex: 1, display: "flex", alignItems: "center", gap: 8,
-          marginLeft: 6, minWidth: 0,
-        }}>
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "center",
-            width: 28, height: 28, borderRadius: 7,
-            background: "var(--accent-bg)", color: "var(--accent)",
-            flexShrink: 0,
-          }}>
-            {icon}
-          </div>
-          <span style={{
-            fontSize: 14, fontWeight: 600, color: "var(--text)",
-            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-          }}>
-            {title}
-          </span>
-        </div>
+        <div style={{ flex: 1 }} />
 
-        {/* Avatar */}
-        <div style={{
-          width: 32, height: 32, borderRadius: "50%",
-          background: "linear-gradient(135deg, var(--accent), #a34f18)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 11, fontWeight: 600, color: "white", flexShrink: 0,
-        }}>
-          JD
-        </div>
+        {/* Avatar — paid only */}
+        {isPaid && (
+          <div style={{
+            width: 32, height: 32, borderRadius: "50%",
+            background: "linear-gradient(135deg, var(--accent), #a34f18)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 11, fontWeight: 600, color: "white", flexShrink: 0,
+          }}>
+            JD
+          </div>
+        )}
       </nav>
 
       {/* Body */}
