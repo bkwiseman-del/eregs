@@ -157,15 +157,17 @@ function RenderNode({
           transition: "background 0.1s, border-color 0.1s",
         }}
       >
-        {/* Paragraph ID */}
+        {/* Paragraph label */}
         {node.label && (
           <span style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 12,
+            fontFamily: "'Lora', Georgia, serif",
+            fontSize: 13.5,
+            fontStyle: "italic",
             color: isHighlighted ? "#8a6a00" : isSelected ? "var(--accent)" : "var(--text3)",
-            width: 32, flexShrink: 0, paddingTop: 3,
+            minWidth: 32, flexShrink: 0, paddingTop: 3, paddingRight: 8,
             userSelect: "none",
             transition: "color 0.12s",
+            whiteSpace: "nowrap",
           }}>
             ({node.label})
           </span>
