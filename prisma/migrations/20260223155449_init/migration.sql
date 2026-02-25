@@ -1,5 +1,5 @@
 -- CreateEnum
-CREATE TYPE "UserRole" AS ENUM ('FLEET_ADMIN', 'SAFETY_MANAGER', 'THIRD_PARTY_ADMIN');
+CREATE TYPE "UserRole" AS ENUM ('PRO', 'FLEET_MANAGER', 'ENTERPRISE_ADMIN', 'ENTERPRISE_MANAGER', 'INTERNAL');
 
 -- CreateEnum
 CREATE TYPE "DriverInviteMethod" AS ENUM ('SMS', 'EMAIL');
@@ -55,7 +55,7 @@ CREATE TABLE "User" (
     "email" TEXT,
     "emailVerified" TIMESTAMP(3),
     "image" TEXT,
-    "role" "UserRole" NOT NULL DEFAULT 'FLEET_ADMIN',
+    "role" "UserRole" NOT NULL DEFAULT 'PRO',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 

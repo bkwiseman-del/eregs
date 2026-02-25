@@ -45,9 +45,11 @@ model VerificationToken {
 // ── USERS ─────────────────────────────────────────────────────────────────────
 
 enum UserRole {
-  FLEET_ADMIN
-  SAFETY_MANAGER
-  THIRD_PARTY_ADMIN
+  PRO
+  FLEET_MANAGER
+  ENTERPRISE_ADMIN
+  ENTERPRISE_MANAGER
+  INTERNAL
 }
 
 model User {
@@ -56,7 +58,8 @@ model User {
   email         String?   @unique
   emailVerified DateTime?
   image         String?
-  role          UserRole  @default(FLEET_ADMIN)
+  role          UserRole  @default(PRO)
+  password      String?   @db.Text
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
