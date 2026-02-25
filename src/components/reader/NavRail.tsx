@@ -54,22 +54,24 @@ export function NavRail({ isPaid = false }: { isPaid?: boolean }) {
       background: "var(--white)", borderRight: "1px solid var(--border)",
       padding: "8px 0 16px", gap: 2, zIndex: 10
     }}>
-      {/* Mini truck logo */}
-      <Link href={isPaid ? "/dashboard" : "/regs/390.1"} style={{ textDecoration: "none", marginBottom: 8 }}>
-        <div style={{
-          width: 36, height: 36, display: "flex", alignItems: "center",
-          justifyContent: "center", borderRadius: 8, transition: "background .15s"
-        }}>
-          <svg width="22" height="22" viewBox="0 0 50 50" fill="none">
-            <rect x="4" y="20" width="28" height="18" rx="3" fill="var(--accent)" opacity=".15"/>
-            <rect x="4" y="20" width="28" height="18" rx="3" stroke="var(--accent)" strokeWidth="2.5"/>
-            <path d="M32 28h8l4 6v4h-12V28z" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round"/>
-            <circle cx="12" cy="40" r="4" stroke="var(--accent)" strokeWidth="2.5"/>
-            <circle cx="38" cy="40" r="4" stroke="var(--accent)" strokeWidth="2.5"/>
-            <rect x="10" y="12" width="18" height="10" rx="2" stroke="var(--accent)" strokeWidth="2" opacity=".5"/>
-          </svg>
-        </div>
-      </Link>
+      {/* Mini truck logo — paid only */}
+      {isPaid && (
+        <Link href="/dashboard" style={{ textDecoration: "none", marginBottom: 8 }}>
+          <div style={{
+            width: 36, height: 36, display: "flex", alignItems: "center",
+            justifyContent: "center", borderRadius: 8, transition: "background .15s"
+          }}>
+            <svg width="22" height="22" viewBox="0 0 50 50" fill="none">
+              <rect x="4" y="20" width="28" height="18" rx="3" fill="var(--accent)" opacity=".15"/>
+              <rect x="4" y="20" width="28" height="18" rx="3" stroke="var(--accent)" strokeWidth="2.5"/>
+              <path d="M32 28h8l4 6v4h-12V28z" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round"/>
+              <circle cx="12" cy="40" r="4" stroke="var(--accent)" strokeWidth="2.5"/>
+              <circle cx="38" cy="40" r="4" stroke="var(--accent)" strokeWidth="2.5"/>
+              <rect x="10" y="12" width="18" height="10" rx="2" stroke="var(--accent)" strokeWidth="2" opacity=".5"/>
+            </svg>
+          </div>
+        </Link>
+      )}
 
       {/* Nav items */}
       {navItems.map((item) => {
@@ -114,28 +116,14 @@ export function NavRail({ isPaid = false }: { isPaid?: boolean }) {
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* Avatar (paid) or sign-in icon (free) */}
-      {isPaid ? (
+      {/* Avatar — paid only */}
+      {isPaid && (
         <div style={{
           width: 26, height: 26, borderRadius: "50%",
           background: "linear-gradient(135deg, var(--accent), #a34f18)",
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 10, fontWeight: 600, color: "white", cursor: "pointer"
         }}>JD</div>
-      ) : (
-        <Link href="/login" title="Sign in" style={{ textDecoration: "none" }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: "50%",
-            background: "var(--bg2)", border: "1px solid var(--border)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer",
-          }}>
-            <svg width="14" height="14" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24">
-              <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
-              <circle cx="12" cy="7" r="4"/>
-            </svg>
-          </div>
-        </Link>
       )}
     </nav>
   );
