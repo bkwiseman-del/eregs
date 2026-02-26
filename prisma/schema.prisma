@@ -1,3 +1,7 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// eRegs — Prisma Schema
+// ─────────────────────────────────────────────────────────────────────────────
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -6,7 +10,7 @@ datasource db {
   provider = "postgresql"
 }
 
-// ── ACCOUNTS (Auth.js required tables) ───────────────────────────────────────
+// ── AUTH (Auth.js / NextAuth required tables) ─────────────────────────────────
 
 model Account {
   id                String  @id @default(cuid())
@@ -55,31 +59,108 @@ enum UserRole {
 model User {
   id            String    @id @default(cuid())
   name          String?
-  email         String?   @unique
+  email         String    @unique
   emailVerified DateTime?
   image         String?
   role          UserRole  @default(PRO)
   password      String?   @db.Text
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
 
-  accounts      Account[]
-  sessions      Session[]
-  fleet         Fleet?
-}
+  // Add-ons
+  hazmatAccess Boolean @default(false)
 
-// ── FLEET ─────────────────────────────────────────────────────────────────────
+  // Organization membership
+  organizationId String?
 
-model Fleet {
-  id        String   @id @default(cuid())
-  name      String
-  userId    String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  drivers   Driver[]
-  tablets   Tablet[]
+  // Auth.js relations
+  accounts Account[]
+  sessions Session[]
+
+  // Org relations
+  ownedOrganization Organization? @relation("OrgOwner")
+  memberOfOrg       Organization? @relation("OrgMembers", fields: [organizationId], references: [id])
+
+  // Billing
+  subscription Subscription?
+
+  // Annotations (PRO and above)
+  highlights Highlight[]
+  notes      Note[]
+  bookmarks  Bookmark[]
+
+  // Partner code used at signup (optional)
+  partnerCodeId String?
+  partnerCode   PartnerCode? @relation(fields: [partnerCodeId], references: [id])
+}
+
+// ── ORGANIZATIONS ─────────────────────────────────────────────────────────────
+
+model Organization {
+  id   String @id @default(cuid())
+  name String
+
+  ownerId String @unique
+  owner   User   @relation("OrgOwner", fields: [ownerId], references: [id])
+
+  members User[] @relation("OrgMembers")
+
+  drivers Driver[]
+  tablets Tablet[]
+
+  trialEndsAt     DateTime?
+  freeInvitesLeft Int       @default(2)
+
+  subscription Subscription?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── SUBSCRIPTIONS ─────────────────────────────────────────────────────────────
+
+enum SubscriptionPlan {
+  PRO
+  FLEET_MANAGER
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  PAUSED
+}
+
+model Subscription {
+  id String @id @default(cuid())
+
+  userId String? @unique
+  orgId  String? @unique
+
+  user User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  plan   SubscriptionPlan
+  status SubscriptionStatus @default(TRIALING)
+
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+  stripePriceId        String?
+
+  hazmatEnabled       Boolean @default(false)
+  hazmatStripePriceId String?
+
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean   @default(false)
+
+  billingNotes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ── DRIVERS ───────────────────────────────────────────────────────────────────
@@ -91,106 +172,225 @@ enum DriverInviteMethod {
 
 enum DriverStatus {
   PENDING
+  ACTIVE
   ACKNOWLEDGED
-  REVOKED
+  REMOVED
 }
 
 model Driver {
-  id                     String             @id @default(cuid())
-  fleetId                String
-  name                   String
-  phone                  String?
-  email                  String?
-  inviteMethod           DriverInviteMethod
-  status                 DriverStatus       @default(PENDING)
-  inviteToken            String?            @unique
-  deviceToken            String?            @unique
+  id    String       @id @default(cuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  name         String
+  phone        String?
+  email        String?
+  inviteMethod DriverInviteMethod
+
+  status DriverStatus @default(PENDING)
+
+  inviteToken          String?   @unique
+  inviteTokenExpiresAt DateTime?
+
+  deviceToken String? @unique
+
   acknowledgedAt         DateTime?
   acknowledgedRegVersion String?
-  revokedAt              DateTime?
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
 
-  fleet                  Fleet              @relation(fields: [fleetId], references: [id], onDelete: Cascade)
-  acknowledgements       Acknowledgement[]
+  acknowledgeChargeId String?
+
+  removedAt   DateTime?
+  removedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  acknowledgements Acknowledgement[]
 }
 
 // ── TABLETS ───────────────────────────────────────────────────────────────────
 
 model Tablet {
-  id           String   @id @default(cuid())
-  fleetId      String
+  id    String       @id @default(cuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
   deviceToken  String   @unique
   unitNumber   String?
   label        String?
   registeredAt DateTime @default(now())
+  lastSeenAt   DateTime?
   updatedAt    DateTime @updatedAt
 
-  fleet        Fleet    @relation(fields: [fleetId], references: [id], onDelete: Cascade)
   acknowledgements Acknowledgement[]
 }
 
 // ── ACKNOWLEDGEMENTS ──────────────────────────────────────────────────────────
 
-enum AckDeviceType {
-  PERSONAL_DEVICE
-  SHARED_TABLET
-}
-
 model Acknowledgement {
-  id                String        @id @default(cuid())
-  driverName        String
-  driverPhone       String?
-  fleetId           String
-  driverId          String?
-  tabletId          String?
-  deviceType        AckDeviceType
-  deviceId          String
-  regVersion        String
-  partsAcknowledged String[]
-  ipAddress         String?
-  userAgent         String?
-  acknowledgedAt    DateTime      @default(now())
+  id       String @id @default(cuid())
+  driverId String
+  driver   Driver @relation(fields: [driverId], references: [id])
 
-  driver            Driver?       @relation(fields: [driverId], references: [id])
-  tablet            Tablet?       @relation(fields: [tabletId], references: [id])
+  regVersion     String
+  acknowledgedAt DateTime @default(now())
+
+  deviceToken String
+  userAgent   String?
+  ipAddress   String?
+
+  tabletId String?
+  tablet   Tablet? @relation(fields: [tabletId], references: [id])
 }
 
 // ── ANNOTATIONS ───────────────────────────────────────────────────────────────
 
-enum AnnotationType {
-  HIGHLIGHT
-  NOTE
-  BOOKMARK
-}
+model Highlight {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-model Annotation {
-  id          String         @id @default(cuid())
-  userId      String
-  type        AnnotationType
+  cfr49Part   String
+  sectionId   String
   paragraphId String
-  part        String
-  section     String
-  note        String?        @db.Text
-  regVersion  String
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+
+  color     String   @default("yellow")
+  createdAt DateTime @default(now())
+
+  @@unique([userId, paragraphId])
 }
 
-// ── REGULATION CACHE ─────────────────────────────────────────────────────────
+model Note {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  cfr49Part String
+  sectionId String
+
+  paragraphIds String[]
+
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Bookmark {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  cfr49Part String
+  sectionId String
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, sectionId])
+}
+
+// ── PARTNER CODES ─────────────────────────────────────────────────────────────
+
+enum PartnerBillingModel {
+  PARTNER_PAYS
+  SUBSIDY
+  REFERRAL
+}
+
+model PartnerCode {
+  id   String @id @default(cuid())
+  code String @unique
+  name String
+
+  billingModel    PartnerBillingModel @default(REFERRAL)
+  discountPercent Int                 @default(0)
+  active          Boolean             @default(true)
+  notes           String?             @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users User[]
+}
+
+// ── REGULATION VERSION TRACKING ──────────────────────────────────────────────
+
+model RegSection {
+  id      String @id // e.g. "49-390.5"
+  title   String
+  part    String
+  section String
+
+  rawXml         String? @db.Text
+  sectionContent Json?
+
+  ecfrVersionDate String
+  fetchedAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  changelogs RegChangelog[]
+}
+
+model RegChangelog {
+  id        String     @id @default(cuid())
+  sectionId String
+  section   RegSection @relation(fields: [sectionId], references: [id])
+
+  versionDate        String
+  changeType         String
+  summary            String? @db.Text
+  federalRegCitation String?
+
+  effectiveDate DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+// ── INSIGHTS ─────────────────────────────────────────────────────────────────
+
+enum InsightType {
+  FMCSA_GUIDANCE
+  VIDEO
+  ARTICLE
+}
+
+model Insight {
+  id   String      @id @default(cuid())
+  type InsightType
+
+  title String
+  body  String? @db.Text
+  url   String?
+
+  durationMinutes Int?
+  thumbnailUrl    String?
+  publisher       String?
+
+  publishedAt     DateTime?
+  readTimeMinutes Int?
+
+  sectionIds   String[]
+  paragraphIds String[]
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdById String?
+}
+
+// ── REGULATION CONTENT CACHE (DO NOT MODIFY — populated data) ────────────────
 
 model CachedSection {
-  id          String   @id @default(cuid())
-  part        String
-  section     String   @unique  // e.g. "390.5"
-  title       String
-  contentJson String   @db.Text // JSON-serialized EcfrNode[]
+  id           String   @id @default(cuid())
+  part         String
+  section      String   @unique
+  title        String
+  contentJson  String   @db.Text
   subpartLabel String?
   subpartTitle String?
-  ecfrVersion String            // eCFR date e.g. "2026-02-24"
-  rawXml      String   @db.Text // original XML for re-parsing
-  cachedAt    DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  ecfrVersion  String
+  rawXml       String   @db.Text
+  cachedAt     DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([part])
   @@index([ecfrVersion])
@@ -200,7 +400,7 @@ model CachedPartToc {
   id          String   @id @default(cuid())
   part        String   @unique
   title       String
-  tocJson     String   @db.Text // JSON-serialized subparts array
+  tocJson     String   @db.Text
   ecfrVersion String
   cachedAt    DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -208,8 +408,8 @@ model CachedPartToc {
 
 model CachedImage {
   id          String   @id @default(cuid())
-  path        String   @unique  // e.g. "/graphics/er15au05.005.gif"
-  contentType String             // e.g. "image/gif"
-  data        Bytes              // raw image bytes
+  path        String   @unique
+  contentType String
+  data        Bytes
   cachedAt    DateTime @default(now())
 }

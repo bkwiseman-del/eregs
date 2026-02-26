@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { AnnotationPageLayout } from "./AnnotationPageLayout";
 import { AnnotationListView } from "./AnnotationListView";
 import { UpgradeBanner } from "./UpgradeBanner";
@@ -84,22 +84,12 @@ const pageConfig = {
 
 export function AnnotationPage({ pageType }: { pageType: PageType }) {
   const config = pageConfig[pageType];
-  const [authState, setAuthState] = useState<"loading" | "authed" | "unauthed">("loading");
-
-  // Check auth by hitting the annotations endpoint
-  useEffect(() => {
-    fetch(`/api/annotations/all?type=${config.apiType}`)
-      .then(res => {
-        setAuthState(res.status === 401 ? "unauthed" : "authed");
-      })
-      .catch(() => {
-        setAuthState("unauthed");
-      });
-  }, [config.apiType]);
+  const { status } = useSession();
+  const isPaid = status === "authenticated";
 
   return (
-    <AnnotationPageLayout isPaid={authState === "authed"}>
-      {authState === "loading" ? (
+    <AnnotationPageLayout isPaid={isPaid}>
+      {status === "loading" ? (
         <div style={{ padding: "80px 20px", textAlign: "center" }}>
           <div style={{
             width: 24, height: 24, border: "2.5px solid var(--border)",
@@ -109,7 +99,7 @@ export function AnnotationPage({ pageType }: { pageType: PageType }) {
           }} />
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
-      ) : authState === "unauthed" ? (
+      ) : !isPaid ? (
         <UpgradeBanner
           feature={config.upgradeFeature}
           description={config.upgradeDescription}

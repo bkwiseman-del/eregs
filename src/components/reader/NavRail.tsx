@@ -20,7 +20,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   {
     label: "Regs",
-    href: "/regs/390.1",
+    href: "/regs/__CURRENT__",
     icon: <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>,
   },
   {
@@ -43,7 +43,7 @@ const navItems: NavItem[] = [
   },
 ];
 
-export function NavRail({ isPaid = false }: { isPaid?: boolean }) {
+export function NavRail({ isPaid = false, currentSection }: { isPaid?: boolean; currentSection?: string }) {
   const pathname = usePathname();
   const isRegs = pathname.startsWith("/regs");
 
@@ -75,10 +75,13 @@ export function NavRail({ isPaid = false }: { isPaid?: boolean }) {
 
       {/* Nav items */}
       {navItems.map((item) => {
-        const active = item.href === "/regs/390.1" ? isRegs : pathname === item.href;
+        const href = item.href === "/regs/__CURRENT__"
+          ? `/regs/${currentSection ?? "390.1"}`
+          : item.href;
+        const active = item.href === "/regs/__CURRENT__" ? isRegs : pathname === item.href;
         const locked = item.proOnly && !isPaid;
         return (
-          <Link key={item.label} href={item.href} title={locked ? `${item.label} (Pro)` : item.label} style={{ textDecoration: "none" }}>
+          <Link key={item.label} href={href} title={locked ? `${item.label} (Pro)` : item.label} style={{ textDecoration: "none" }}>
             <div style={{
               width: 44, display: "flex", flexDirection: "column", alignItems: "center",
               gap: 3, padding: "7px 0", borderRadius: 8, cursor: "pointer",
@@ -113,10 +116,8 @@ export function NavRail({ isPaid = false }: { isPaid?: boolean }) {
         </>
       )}
 
-      {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* Avatar — paid only */}
       {isPaid && (
         <div style={{
           width: 26, height: 26, borderRadius: "50%",

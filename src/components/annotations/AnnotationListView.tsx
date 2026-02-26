@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import type { Annotation } from "@/lib/annotations";
+import type { ReaderAnnotation } from "@/lib/annotations";
 
 type AnnotationType = "NOTE" | "HIGHLIGHT" | "BOOKMARK";
 
@@ -18,10 +18,10 @@ interface SectionGroup {
   key: string;       // e.g. "390-390.5"
   part: string;
   section: string;
-  annotations: Annotation[];
+  annotations: ReaderAnnotation[];
 }
 
-function groupBySection(annotations: Annotation[]): SectionGroup[] {
+function groupBySection(annotations: ReaderAnnotation[]): SectionGroup[] {
   const map = new Map<string, SectionGroup>();
   for (const a of annotations) {
     const key = `${a.part}-${a.section}`;
@@ -56,19 +56,34 @@ function sectionDisplayName(section: string): string {
   return `§ ${section}`;
 }
 
-/** Extract a short paragraph label from paragraphId like "395.1-14-a" → "(a)" */
-function paragraphLabel(paragraphId: string): string {
+/** Extract short paragraph labels from paragraph IDs */
+function paragraphLabel(paragraphId: string, paragraphIds?: string[]): string {
+  // For notes with multiple paragraphs, show range
+  if (paragraphIds && paragraphIds.length > 1) {
+    const labels = paragraphIds.map(pid => {
+      const parts = pid.split("-");
+      if (parts.length >= 3) {
+        const l = parts[parts.length - 1];
+        if (l.startsWith("p")) return null;
+        return `(${l})`;
+      }
+      return null;
+    }).filter(Boolean);
+    if (labels.length > 0) return labels.join(", ");
+    return `${paragraphIds.length} paragraphs`;
+  }
+  // Single paragraph
   const parts = paragraphId.split("-");
   if (parts.length >= 3) {
     const label = parts[parts.length - 1];
-    if (label.startsWith("p")) return ""; // unlabeled paragraph
+    if (label.startsWith("p")) return "";
     return `(${label})`;
   }
   return "";
 }
 
 export function AnnotationListView({ type, emptyIcon, emptyTitle, emptyDescription }: Props) {
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [annotations, setAnnotations] = useState<ReaderAnnotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -252,8 +267,8 @@ export function AnnotationListView({ type, emptyIcon, emptyTitle, emptyDescripti
   );
 }
 
-function AnnotationCard({ annotation: a, type }: { annotation: Annotation; type: AnnotationType }) {
-  const label = paragraphLabel(a.paragraphId);
+function AnnotationCard({ annotation: a, type }: { annotation: ReaderAnnotation; type: AnnotationType }) {
+  const label = paragraphLabel(a.paragraphId, a.paragraphIds);
 
   // Link to the section — in future, could include paragraph hash for scroll-to
   const href = `/regs/${a.section}`;
@@ -327,7 +342,7 @@ function AnnotationCard({ annotation: a, type }: { annotation: Annotation; type:
 
           {/* Timestamp */}
           <span style={{ fontSize: 11, color: "var(--text3)" }}>
-            {formatTimeAgo(a.updatedAt)}
+            {formatTimeAgo(a.updatedAt ?? a.createdAt)}
           </span>
         </div>
 

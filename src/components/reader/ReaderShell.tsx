@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import type { EcfrSection, PartToc } from "@/lib/ecfr";
-import type { Annotation } from "@/lib/annotations";
+import type { ReaderAnnotation } from "@/lib/annotations";
 import { makeParagraphId } from "@/lib/annotations";
 import { TopNav } from "./TopNav";
 import { NavRail } from "./NavRail";
@@ -266,12 +267,14 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
 
   // ── ANNOTATIONS ─────────────────────────────────────────────────────────
 
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [annotations, setAnnotations] = useState<ReaderAnnotation[]>([]);
   const [selectedPids, setSelectedPids] = useState<Set<string>>(new Set());
-  const [editingNote, setEditingNote] = useState<Annotation | null>(null);
+  const [editingNote, setEditingNote] = useState<ReaderAnnotation | null>(null);
   const [toastMsg, setToastMsg] = useState("");
   const [toastKey, setToastKey] = useState(0);
   const localIdCounter = useRef(0);
+  const { status: sessionStatus } = useSession();
+  const isPaid = sessionStatus === "authenticated";
   const [isAuthed, setIsAuthed] = useState<boolean | null>(null); // null = unknown yet
 
   const showToast = useCallback((msg: string) => {
@@ -328,22 +331,24 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         if (!r.ok) throw new Error("not authed");
         return r.json();
       })
-      .then((serverAnnotations: Annotation[]) => {
+      .then((serverAnnotations: ReaderAnnotation[]) => {
         setIsAuthed(true);
-        const serverKeys = new Set(
-          serverAnnotations.map(a => `${a.paragraphId}:${a.type}`)
-        );
-        const unsyncedLocal = localAnnotations.filter(
-          a => !serverKeys.has(`${a.paragraphId}:${a.type}`)
-        );
+        // Dedup by ID — local annotations not yet on server keep their local- prefix
+        const serverIds = new Set(serverAnnotations.map(a => a.id));
+        const unsyncedLocal = localAnnotations.filter(a => !serverIds.has(a.id));
         setAnnotations([...serverAnnotations, ...unsyncedLocal]);
 
         for (const local of unsyncedLocal) {
-          syncToServer(local.id, {
-            type: local.type, paragraphId: local.paragraphId,
-            part: local.part, section: local.section,
-            note: local.note, regVersion: local.regVersion || "",
-          });
+          const body: Record<string, unknown> = {
+            type: local.type, part: local.part, section: local.section,
+          };
+          if (local.type === "NOTE") {
+            body.paragraphIds = local.paragraphIds || [local.paragraphId];
+            body.note = local.note;
+          } else {
+            body.paragraphId = local.paragraphId;
+          }
+          syncToServer(local.id, body);
         }
       })
       .catch(() => {
@@ -393,11 +398,11 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
 
       for (const anno of toRemove) {
         if (!anno.id.startsWith("local-")) {
-          fetch(`/api/annotations?id=${anno.id}`, { method: "DELETE" }).catch(() => {});
+          fetch(`/api/annotations?id=${anno.id}&type=HIGHLIGHT`, { method: "DELETE" }).catch(() => {});
         }
       }
     } else {
-      const newAnnotations: Annotation[] = pids
+      const newAnnotations: ReaderAnnotation[] = pids
         .filter(pid => !annotations.some(a => a.paragraphId === pid && a.type === "HIGHLIGHT"))
         .map(pid => ({
           id: makeLocalId(),
@@ -405,17 +410,14 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
           paragraphId: pid,
           part: currentPart,
           section: currentSectionId,
-          note: null,
-          regVersion: "",
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
         }));
       setAnnotations(prev => [...prev, ...newAnnotations]);
 
       for (const anno of newAnnotations) {
         syncToServer(anno.id, {
           type: "HIGHLIGHT", paragraphId: anno.paragraphId,
-          part: currentPart, section: currentSectionId, regVersion: "",
+          part: currentPart, section: currentSectionId,
         });
       }
     }
@@ -428,7 +430,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   }, [selectedPids, currentPart, currentSectionId, allSelectedHighlighted, annotations, showToast, clearSelection, syncToServer]);
 
   // Edit existing note — opens inline in ActionBar
-  const handleEditNote = useCallback((annotation: Annotation) => {
+  const handleEditNote = useCallback((annotation: ReaderAnnotation) => {
     setEditingNote(annotation);
   }, []);
 
@@ -443,9 +445,10 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
 
       if (editingNote.id.startsWith("local-")) {
         syncToServer(editingNote.id, {
-          type: editingNote.type, paragraphId: editingNote.paragraphId,
+          type: "NOTE",
+          paragraphIds: editingNote.paragraphIds || [editingNote.paragraphId],
           part: editingNote.part, section: editingNote.section,
-          note: text, regVersion: editingNote.regVersion || "",
+          note: text,
         });
       } else {
         fetch("/api/annotations", {
@@ -455,8 +458,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         }).catch(() => {});
       }
     } else {
-      // Create new notes — note text only on last selected paragraph (by document order),
-      // others get a NOTE with null text (blue dot indicator only, no bubble)
+      // Create one Note with all selected paragraph IDs (sorted by document order)
       const pids = [...selectedPids].sort((a, b) => {
         const idxA = currentSection.content.findIndex((n, i) =>
           makeParagraphId(currentSectionId, n.label, i) === a
@@ -466,59 +468,43 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         );
         return idxA - idxB;
       });
-      const lastPid = pids[pids.length - 1];
-      const newAnnotations: Annotation[] = pids.map(pid => ({
+
+      const newNote: ReaderAnnotation = {
         id: makeLocalId(),
-        type: "NOTE" as const,
-        paragraphId: pid,
+        type: "NOTE",
+        paragraphId: pids[pids.length - 1],  // bubble placement
+        paragraphIds: pids,
         part: currentPart,
         section: currentSectionId,
-        note: pid === lastPid ? text : null,
-        regVersion: "",
+        note: text,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      }));
-      setAnnotations(prev => [...prev, ...newAnnotations]);
+      };
+      setAnnotations(prev => [...prev, newNote]);
       showToast("Note saved");
       clearSelection();
 
-      for (const anno of newAnnotations) {
-        syncToServer(anno.id, {
-          type: "NOTE", paragraphId: anno.paragraphId,
-          part: currentPart, section: currentSectionId,
-          note: anno.note, regVersion: "",
-        });
-      }
+      syncToServer(newNote.id, {
+        type: "NOTE", paragraphIds: pids,
+        part: currentPart, section: currentSectionId, note: text,
+      });
     }
     setEditingNote(null);
-  }, [editingNote, selectedPids, currentPart, currentSectionId, showToast, clearSelection, syncToServer]);
+  }, [editingNote, selectedPids, currentPart, currentSectionId, currentSection, showToast, clearSelection, syncToServer]);
 
-  // Delete note — also removes sibling blue-dot annotations created in the same group
+  // Delete note — single note row now covers all paragraphs
   const handleDeleteNote = useCallback(async () => {
     if (!editingNote) return;
 
-    // Find sibling blue-dot annotations (NOTE with null text in same section)
-    const siblingsToDelete = annotations.filter(
-      a => a.id !== editingNote.id &&
-           a.type === "NOTE" &&
-           a.section === editingNote.section &&
-           !a.note
-    );
-
-    // Remove note and all siblings from local state
-    const idsToRemove = new Set([editingNote.id, ...siblingsToDelete.map(a => a.id)]);
-    setAnnotations(prev => prev.filter(a => !idsToRemove.has(a.id)));
+    setAnnotations(prev => prev.filter(a => a.id !== editingNote.id));
     showToast("Note deleted");
 
-    // Delete each from server
-    for (const id of idsToRemove) {
-      if (!id.startsWith("local-")) {
-        fetch(`/api/annotations?id=${id}`, { method: "DELETE" }).catch(() => {});
-      }
+    if (!editingNote.id.startsWith("local-")) {
+      fetch(`/api/annotations?id=${editingNote.id}&type=NOTE`, { method: "DELETE" }).catch(() => {});
     }
 
     setEditingNote(null);
-  }, [editingNote, annotations, showToast]);
+  }, [editingNote, showToast]);
 
   // Copy with citation
   const handleCopy = useCallback(() => {
@@ -579,7 +565,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         onToggleToc={!isMobile ? toggleTocCollapse : undefined}
         tocCollapsed={tocCollapsed}
         isMobile={isMobile}
-        isPaid={isAuthed === true}
+        isPaid={isPaid}
       />
 
       <div style={{
@@ -587,7 +573,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         top: "var(--nav-h)", bottom: isMobile ? 54 : 0, left: 0, right: 0,
         display: "flex", overflow: "hidden"
       }}>
-        {!isMobile && <NavRail isPaid={isAuthed === true} />}
+        {!isMobile && <NavRail isPaid={isPaid} currentSection={currentSectionId} />}
 
         {/* Desktop TOC with resize handle */}
         {!isMobile && !tocCollapsed && (
@@ -653,7 +639,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         )}
 
         <main ref={mainRef} style={{ flex: 1, overflowY: "auto", minWidth: 0, background: "var(--bg)" }}>
-          {isAuthed !== true && <ProBanner />}
+          {!isPaid && <ProBanner />}
           <ReaderContent
             section={currentSection}
             adjacent={adjacent}
@@ -666,14 +652,14 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         </main>
 
         {/* Desktop insights with resize handle — Pro only */}
-        {isAuthed === true && !isMobile && insightsOpen && (
+        {isPaid && !isMobile && insightsOpen && (
           <ResizeHandle
             side="right"
             onResize={handleInsResize}
           />
         )}
 
-        {isAuthed === true && (
+        {isPaid && (
           <InsightsPanel
             section={currentSection}
             open={insightsOpen}
@@ -684,7 +670,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       </div>
 
       {/* Mobile bottom tabs */}
-      {isMobile && <MobileBottomTabs isPaid={isAuthed === true} />}
+      {isMobile && <MobileBottomTabs isPaid={isPaid} />}
 
       {/* Annotation UI */}
       <ActionBar
@@ -699,7 +685,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         onDeleteNote={handleDeleteNote}
         onCancelEdit={() => setEditingNote(null)}
         paragraphPreview={noteSheetPreview}
-        isPaid={isAuthed === true}
+        isPaid={isPaid}
       />
 
       <Toast message={toastMsg} visible={toastKey > 0} key={toastKey} />

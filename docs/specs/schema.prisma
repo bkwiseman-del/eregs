@@ -1,0 +1,502 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// eRegs — Prisma Schema
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// ACCOUNT TYPE SUMMARY
+//
+// FREE (anonymous)        Read regs + basic search. No account row created.
+//
+// PRO                     Full annotations, insights, PWA, version history,
+//                         citation copy. Self-serve via Stripe.
+//
+// FLEET_MANAGER           Everything Pro + manage one fleet's drivers +
+//                         acknowledgement tracking. Self-serve via Stripe.
+//                         Owns their own Organization.
+//
+// ENTERPRISE_ADMIN        Manually configured by eRegs team in admin panel.
+//                         Converted from an existing FLEET_MANAGER account.
+//                         Owns the Organization + manages billing + can add
+//                         one or more ENTERPRISE_MANAGERs under them.
+//
+// ENTERPRISE_MANAGER      Added to an org by an ENTERPRISE_ADMIN.
+//                         Same functional access as FLEET_MANAGER but scoped
+//                         to the Enterprise org. No billing access.
+//
+// INTERNAL                eRegs team. Full admin panel access.
+//
+// PARTNER (not a role)    A PartnerCode tied to signups. Billing arranged
+//                         manually. No dedicated account type.
+//
+// DRIVER (not a role)     Not a User row. Managed as Driver records under
+//                         an Organization. Auth via device-bound token.
+//                         Charged ($4) at time of acknowledgement, not invite.
+//                         Re-adding a previously removed driver charges again.
+//
+// HAZMAT ADD-ON           Boolean flag on User. Available to PRO and above.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── AUTH (Auth.js / NextAuth required tables) ─────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ── USERS ─────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  PRO
+  FLEET_MANAGER
+  ENTERPRISE_ADMIN    // manually set by eRegs team; converted from FLEET_MANAGER
+  ENTERPRISE_MANAGER  // added to an Enterprise org by an ENTERPRISE_ADMIN
+  INTERNAL
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(PRO)
+
+  // Add-ons
+  hazmatAccess  Boolean   @default(false) // HazMat reg add-on, any paid tier
+  password      String?   @db.Text              // bcrypt hash; null for OAuth-only accounts
+
+  // Enterprise: ENTERPRISE_MANAGERs belong to an org owned by an ENTERPRISE_ADMIN
+  // FLEET_MANAGERs own their own org (organizationOwner relation below)
+  organizationId String?  // null for PRO; set for FLEET_MANAGER (their own org) and ENTERPRISE_MANAGER (their enterprise org)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Auth.js relations
+  accounts Account[]
+  sessions Session[]
+
+  // Org relations
+  ownedOrganization Organization? @relation("OrgOwner")    // FLEET_MANAGER or ENTERPRISE_ADMIN owns one org
+  memberOfOrg       Organization? @relation("OrgMembers", fields: [organizationId], references: [id])
+
+  // Billing
+  subscription Subscription?
+
+  // Annotations (PRO and above)
+  highlights Highlight[]
+  notes      Note[]
+  bookmarks  Bookmark[]
+
+  // Partner code used at signup (optional)
+  partnerCodeId String?
+  partnerCode   PartnerCode? @relation(fields: [partnerCodeId], references: [id])
+}
+
+// ── ORGANIZATIONS ─────────────────────────────────────────────────────────────
+//
+// Created automatically when a user upgrades to FLEET_MANAGER.
+// Converted to Enterprise org when eRegs team elevates them to ENTERPRISE_ADMIN.
+// One org per billing account. ENTERPRISE_MANAGERs are members, not owners.
+
+model Organization {
+  id   String @id @default(cuid())
+  name String
+
+  // The billing owner — FLEET_MANAGER or ENTERPRISE_ADMIN
+  ownerId String @unique
+  owner   User   @relation("OrgOwner", fields: [ownerId], references: [id])
+
+  // ENTERPRISE_MANAGER members (empty for plain FLEET_MANAGER orgs)
+  members User[] @relation("OrgMembers")
+
+  // Fleet management
+  drivers Driver[]
+  tablets Tablet[]
+
+  // Trial tracking
+  trialEndsAt      DateTime?
+  freeInvitesLeft  Int       @default(2) // 2 free driver invites during trial
+
+  subscription Subscription? // Enterprise orgs have one org-level subscription
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── SUBSCRIPTIONS ─────────────────────────────────────────────────────────────
+//
+// PRO and FLEET_MANAGER: one Subscription row per User, managed via Stripe self-serve.
+// ENTERPRISE: one Subscription row per Organization, owned by the ENTERPRISE_ADMIN.
+//   ENTERPRISE_MANAGERs have no Subscription row — access granted by role + org membership.
+// INTERNAL: no Subscription row.
+
+enum SubscriptionPlan {
+  PRO
+  FLEET_MANAGER
+  ENTERPRISE        // manually arranged; may or may not have Stripe records
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  PAUSED
+}
+
+model Subscription {
+  id String @id @default(cuid())
+
+  // Exactly one of these is set:
+  userId String? @unique // PRO or FLEET_MANAGER — self-serve user billing
+  orgId  String? @unique // ENTERPRISE — org-level billing owned by ENTERPRISE_ADMIN
+
+  user User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  plan   SubscriptionPlan
+  status SubscriptionStatus @default(TRIALING)
+
+  // Stripe — null for manually-billed Enterprise accounts
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+  stripePriceId        String?
+
+  // Add-ons
+  hazmatEnabled       Boolean @default(false)
+  hazmatStripePriceId String? // null if included in manual Enterprise arrangement
+
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean   @default(false)
+
+  // For Enterprise: free-form notes on the billing arrangement
+  billingNotes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── DRIVERS ───────────────────────────────────────────────────────────────────
+//
+// Drivers are NOT User rows. They have no login.
+// Auth is device-bound: invite token → device token stored in PWA.
+// Billing: $4 charged when acknowledgement is created (not when invite is sent).
+// Re-adding a previously removed driver creates a new Driver row and charges again.
+
+enum DriverInviteMethod {
+  SMS
+  EMAIL
+}
+
+enum DriverStatus {
+  PENDING      // invite sent, not yet opened
+  ACTIVE       // invite opened, device token issued; acknowledgement may or may not be done
+  ACKNOWLEDGED // has confirmed receipt of regulations
+  REMOVED      // access revoked by fleet manager; device token invalidated server-side
+}
+
+model Driver {
+  id           String             @id @default(cuid())
+  orgId        String
+  org          Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  name         String
+  phone        String?
+  email        String?
+  inviteMethod DriverInviteMethod
+
+  status       DriverStatus @default(PENDING)
+
+  // One-time invite token (in SMS/email link). Consumed on first open.
+  inviteToken         String?   @unique
+  inviteTokenExpiresAt DateTime?
+
+  // Device-bound session token issued after invite is consumed.
+  // Invalidated when driver is removed.
+  deviceToken String? @unique
+
+  // Acknowledgement
+  acknowledgedAt         DateTime?
+  acknowledgedRegVersion String?   // eCFR version date string at time of acknowledgement, e.g. "2026-01-15"
+
+  // Billing: charge created when acknowledgement is recorded
+  acknowledgeChargeId String? // Stripe charge or invoice item ID
+
+  // Removal tracking (removing and re-adding is a new Driver row)
+  removedAt   DateTime?
+  removedById String?   // User.id of the fleet manager who removed them
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  acknowledgements Acknowledgement[]
+}
+
+// ── ACKNOWLEDGEMENTS ──────────────────────────────────────────────────────────
+//
+// Immutable record created when a driver confirms receipt.
+// Preserved even if driver is later removed.
+
+model Acknowledgement {
+  id       String @id @default(cuid())
+  driverId String
+  driver   Driver @relation(fields: [driverId], references: [id])
+
+  // Snapshot of what was acknowledged
+  regVersion   String   // eCFR version date, e.g. "2026-01-15"
+  acknowledgedAt DateTime @default(now())
+
+  // Device context for the compliance record
+  deviceToken    String
+  userAgent      String?
+  ipAddress      String?
+
+  // For tablet scenario: which tablet device this was acknowledged on
+  tabletId String?
+  tablet   Tablet? @relation(fields: [tabletId], references: [id])
+}
+
+// ── TABLETS ───────────────────────────────────────────────────────────────────
+//
+// Fleet-registered shared devices (slip-seat trucks, etc.)
+// Monetized per-device ($4/tablet registration).
+// Persistent fleet-level device credential — no per-driver login on the tablet.
+// Acknowledgement prompts are queued server-side per driver assignment.
+
+model Tablet {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  deviceToken String  @unique // persistent credential stored on the tablet
+  unitNumber  String?         // truck/unit number for fleet reference
+  label       String?         // friendly name, e.g. "Truck 42 — Chicago yard"
+
+  registeredAt DateTime @default(now())
+  lastSeenAt   DateTime?
+
+  acknowledgements Acknowledgement[]
+}
+
+// ── ANNOTATIONS ───────────────────────────────────────────────────────────────
+//
+// PRO and above. Scoped to the individual user (not shared within orgs,
+// unless we add org-shared annotations for Enterprise later).
+
+model Highlight {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Regulation location
+  cfr49Part  String // e.g. "390"
+  sectionId  String // e.g. "390.5"
+  paragraphId String // e.g. "p-390.5-cmv" — matches the data-pid on rendered paragraphs
+
+  color     String   @default("yellow") // for future multi-color highlights
+  createdAt DateTime @default(now())
+
+  @@unique([userId, paragraphId])
+}
+
+model Note {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  cfr49Part String
+  sectionId String
+
+  // Ordered list of paragraph IDs included in the selection when the note was created.
+  // - Blue dot renders on every paragraph in this array.
+  // - Note bubble renders after the LAST paragraph in this array.
+  // - If a user selects any paragraph already in this array, they edit this
+  //   existing note rather than creating a new one.
+  // - One note per selection; editing replaces the text in place.
+  paragraphIds String[]
+
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // No DB unique constraint — uniqueness enforced in application logic via paragraphIds overlap check.
+}
+
+model Bookmark {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  cfr49Part String
+  sectionId String // bookmarks are section-level, not paragraph-level
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, sectionId])
+}
+
+// ── PARTNER CODES ─────────────────────────────────────────────────────────────
+//
+// Backend-only. No public-facing account type.
+// Created and managed by eRegs team in admin panel.
+// Billing model varies per partner — tracked here for reference.
+
+enum PartnerBillingModel {
+  PARTNER_PAYS      // partner is invoiced for all accounts under their code
+  SUBSIDY           // partner pays a reduced rate; user pays the remainder
+  REFERRAL          // no billing arrangement; just attribution tracking
+}
+
+model PartnerCode {
+  id   String @id @default(cuid())
+  code String @unique // e.g. "ACME-INS"
+  name String          // partner name for internal reference
+
+  billingModel  PartnerBillingModel @default(REFERRAL)
+  discountPercent Int               @default(0) // 0–100; used for SUBSIDY model
+  active        Boolean             @default(true)
+  notes         String?             @db.Text // internal notes on the arrangement
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users User[] // accounts that signed up using this code
+}
+
+// ── REGULATION CONTENT CACHE ──────────────────────────────────────────────────
+//
+// Local cache of eCFR content. Synced from eCFR API.
+// Avoids cold-start latency and supports offline/PWA serving.
+// sectionContent stores the parsed paragraph array as JSON.
+
+model RegSection {
+  id        String @id // e.g. "49-390.5"
+  title     String     // e.g. "Definitions"
+  part      String     // e.g. "390"
+  section   String     // e.g. "390.5"
+
+  // Raw and parsed content
+  rawXml        String?   @db.Text
+  sectionContent Json?     // parsed paragraph array [{pid, label, level, text}]
+
+  // Version tracking
+  ecfrVersionDate String   // e.g. "2026-01-15" — the date from eCFR's version header
+  fetchedAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  changelogs RegChangelog[]
+}
+
+model RegChangelog {
+  id        String     @id @default(cuid())
+  sectionId String
+  section   RegSection @relation(fields: [sectionId], references: [id])
+
+  versionDate  String   // eCFR version date this change appeared in
+  changeType   String   // "substantive" | "editorial" | "current"
+  summary      String?  @db.Text
+  federalRegCitation String? // e.g. "91 FR 3847"
+
+  effectiveDate DateTime?
+  createdAt     DateTime @default(now())
+}
+
+// ── INSIGHTS (FMCSA Guidance + Trucksafe Content) ─────────────────────────────
+//
+// Managed by eRegs team in admin panel.
+// Each item maps to one or more sections/paragraphs.
+// Three content types: FMCSA_GUIDANCE, VIDEO, ARTICLE.
+
+enum InsightType {
+  FMCSA_GUIDANCE
+  VIDEO
+  ARTICLE
+}
+
+model Insight {
+  id    String      @id @default(cuid())
+  type  InsightType
+
+  title  String
+  body   String?  @db.Text  // used for FMCSA_GUIDANCE and ARTICLE
+  url    String?             // source link (fmcsa.dot.gov) or video URL
+
+  // For VIDEO
+  durationMinutes Int?
+  thumbnailUrl    String?
+  publisher       String?   // e.g. "Trucksafe Consulting"
+
+  // For ARTICLE
+  publishedAt     DateTime?
+  readTimeMinutes Int?
+
+  // Regulation mapping — which sections/paragraphs this insight applies to
+  // Stored as arrays of strings for flexibility
+  sectionIds   String[] // e.g. ["390.5", "390.3"]
+  paragraphIds String[] // e.g. ["p-390.5-n", "p-390.5-o"] — optional, for paragraph-level mapping
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdById String?
+}
+
+model CachedSection {
+  section       String   @id           // e.g. "390.5"
+  part          String                 // e.g. "390"
+  title         String
+  contentJson   String   @db.Text      // JSON-serialized EcfrNode[]
+  subpartLabel  String?               // e.g. "Subpart A"
+  subpartTitle  String?               // e.g. "General"
+  fetchedAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model CachedPartToc {
+  part      String   @id             // e.g. "390"
+  title     String
+  tocJson   String   @db.Text        // JSON-serialized subparts/sections array
+  fetchedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

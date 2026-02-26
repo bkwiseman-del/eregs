@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
         name,
         email,
         password: hash,
-        role: "FLEET_MANAGER",
+        role: "PRO",
       },
     });
 

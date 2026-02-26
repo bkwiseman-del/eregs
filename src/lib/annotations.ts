@@ -1,15 +1,20 @@
-// Annotation types for client-side use
+// ── Annotation types for client-side use ─────────────────────────────────────
 
-export interface Annotation {
+/** Normalized annotation shape used by reader components.
+ *  The API returns DB-native field names (cfr49Part, sectionId, etc.)
+ *  but we normalize to this shape so components stay simple.
+ */
+export interface ReaderAnnotation {
   id: string;
   type: "HIGHLIGHT" | "NOTE" | "BOOKMARK";
-  paragraphId: string;  // stable ID: "{section}-{label}" e.g. "395.1-a" or "{section}-p{index}" for unlabeled
+  paragraphId: string;      // single pid (highlights) or last pid (note bubble placement)
+  paragraphIds?: string[];  // note only — all pids in the selection
   part: string;
   section: string;
   note?: string | null;
-  regVersion: string;
+  color?: string;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
 }
 
 /** Build a stable paragraph ID from section + node info.
@@ -18,11 +23,8 @@ export interface Annotation {
  *  in different subsections.
  *
  *  Format: "{section}-{index}-{label}" e.g. "395.1-14-1" or "395.1-p0"
- *  NOTE: Changed from label-only format. Old annotations using "{section}-{label}"
- *  will no longer match and need migration if any exist in production.
  */
 export function makeParagraphId(section: string, label?: string, index?: number): string {
-  // Index is always unique within a section's content array
   const idx = index ?? 0;
   if (label) {
     const clean = label.replace(/[()]/g, "").replace(/\s+/g, "-");

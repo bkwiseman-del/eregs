@@ -1,20 +1,20 @@
 "use client";
 
 import type { EcfrSection, EcfrNode } from "@/lib/ecfr";
-import type { Annotation } from "@/lib/annotations";
+import type { ReaderAnnotation } from "@/lib/annotations";
 import { makeParagraphId } from "@/lib/annotations";
 
 interface Props {
   section: EcfrSection;
   adjacent: { prev: string | null; next: string | null };
   onNavigate?: (section: string) => void;
-  annotations: Annotation[];
+  annotations: ReaderAnnotation[];
   selectedPids: Set<string>;
   onTogglePara: (pid: string) => void;
-  onEditNote: (annotation: Annotation) => void;
+  onEditNote: (annotation: ReaderAnnotation) => void;
 }
 
-function NoteBubble({ annotation, onEdit }: { annotation: Annotation; onEdit: () => void }) {
+function NoteBubble({ annotation, onEdit }: { annotation: ReaderAnnotation; onEdit: () => void }) {
   return (
     <div
       onClick={(e) => { e.stopPropagation(); onEdit(); }}
@@ -50,10 +50,10 @@ function RenderNode({
   node: EcfrNode;
   index: number;
   section: string;
-  annotations: Annotation[];
+  annotations: ReaderAnnotation[];
   selectedPids: Set<string>;
   onTogglePara: (pid: string) => void;
-  onEditNote: (annotation: Annotation) => void;
+  onEditNote: (annotation: ReaderAnnotation) => void;
 }) {
   const indentMap = [0, 24, 48, 72, 96, 120, 144];
   const indent = indentMap[Math.min(node.level, 6)];
@@ -125,9 +125,13 @@ function RenderNode({
   const pid = makeParagraphId(section, node.label, index);
   const isSelected = selectedPids.has(pid);
   const highlight = annotations.find(a => a.paragraphId === pid && a.type === "HIGHLIGHT");
-  const noteAnnotation = annotations.find(a => a.paragraphId === pid && a.type === "NOTE");
+  const noteAnnotation = annotations.find(
+    a => a.type === "NOTE" && (a.paragraphIds?.includes(pid) || a.paragraphId === pid)
+  );
   const isHighlighted = !!highlight;
   const hasNote = !!noteAnnotation;
+  // Note bubble renders only after the last paragraph in the selection
+  const isLastNoteParagraph = noteAnnotation && noteAnnotation.paragraphId === pid;
 
   return (
     <div>
@@ -194,8 +198,8 @@ function RenderNode({
         )}
       </div>
 
-      {/* Note bubble */}
-      {noteAnnotation && noteAnnotation.note && (
+      {/* Note bubble — only after the last paragraph in the selection */}
+      {isLastNoteParagraph && noteAnnotation.note && (
         <NoteBubble annotation={noteAnnotation} onEdit={() => onEditNote(noteAnnotation)} />
       )}
     </div>
