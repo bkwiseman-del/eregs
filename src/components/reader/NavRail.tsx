@@ -54,21 +54,18 @@ export function NavRail({ isPaid = false, currentSection }: { isPaid?: boolean; 
       background: "var(--white)", borderRight: "1px solid var(--border)",
       padding: "8px 0 16px", gap: 2, zIndex: 10
     }}>
-      {/* Mini truck logo — paid only */}
+      {/* Dashboard — paid only */}
       {isPaid && (
-        <Link href="/dashboard" style={{ textDecoration: "none", marginBottom: 8 }}>
+        <Link href="/dashboard" title="Dashboard" style={{ textDecoration: "none" }}>
           <div style={{
-            width: 36, height: 36, display: "flex", alignItems: "center",
-            justifyContent: "center", borderRadius: 8, transition: "background .15s"
+            width: 44, display: "flex", flexDirection: "column", alignItems: "center",
+            gap: 3, padding: "7px 0", borderRadius: 8, cursor: "pointer",
+            color: pathname === "/dashboard" ? "var(--accent)" : "var(--text3)",
+            background: pathname === "/dashboard" ? "var(--accent-bg)" : "transparent",
+            transition: "all .15s",
           }}>
-            <svg width="22" height="22" viewBox="0 0 50 50" fill="none">
-              <rect x="4" y="20" width="28" height="18" rx="3" fill="var(--accent)" opacity=".15"/>
-              <rect x="4" y="20" width="28" height="18" rx="3" stroke="var(--accent)" strokeWidth="2.5"/>
-              <path d="M32 28h8l4 6v4h-12V28z" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round"/>
-              <circle cx="12" cy="40" r="4" stroke="var(--accent)" strokeWidth="2.5"/>
-              <circle cx="38" cy="40" r="4" stroke="var(--accent)" strokeWidth="2.5"/>
-              <rect x="10" y="12" width="18" height="10" rx="2" stroke="var(--accent)" strokeWidth="2" opacity=".5"/>
-            </svg>
+            <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.02em" }}>Dashboard</span>
           </div>
         </Link>
       )}
@@ -107,9 +104,11 @@ export function NavRail({ isPaid = false, currentSection }: { isPaid?: boolean; 
             <div style={{
               width: 44, display: "flex", flexDirection: "column", alignItems: "center",
               gap: 3, padding: "7px 0", borderRadius: 8, cursor: "pointer",
-              color: "var(--text3)", transition: "all .15s"
+              color: pathname === "/fleet" ? "var(--accent)" : "var(--text3)",
+              background: pathname === "/fleet" ? "var(--accent-bg)" : "transparent",
+              transition: "all .15s"
             }}>
-              <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 4v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
               <span style={{ fontSize: 9, fontWeight: 500 }}>Fleet</span>
             </div>
           </Link>
@@ -117,15 +116,6 @@ export function NavRail({ isPaid = false, currentSection }: { isPaid?: boolean; 
       )}
 
       <div style={{ flex: 1 }} />
-
-      {isPaid && (
-        <div style={{
-          width: 26, height: 26, borderRadius: "50%",
-          background: "linear-gradient(135deg, var(--accent), #a34f18)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 10, fontWeight: 600, color: "white", cursor: "pointer"
-        }}>JD</div>
-      )}
     </nav>
   );
 }

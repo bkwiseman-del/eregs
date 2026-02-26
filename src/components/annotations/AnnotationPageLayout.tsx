@@ -1,8 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import type { PartToc } from "@/lib/ecfr";
 import { NavRail } from "@/components/reader/NavRail";
+import { ReaderSidebar } from "@/components/reader/ReaderSidebar";
+import { ResizeHandle } from "@/components/reader/ResizeHandle";
 import { MobileBottomTabs } from "@/components/shared/MobileBottomTabs";
+
+const TOC_MIN = 200, TOC_MAX = 420, TOC_DEFAULT = 290;
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(false);
@@ -23,16 +30,80 @@ export function AnnotationPageLayout({
   isPaid?: boolean;
 }) {
   const isMobile = useIsMobile();
+  const router = useRouter();
+  const [tocCollapsed, setTocCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("eregs-toc-collapsed") === "1";
+  });
+  const [tocWidth, setTocWidth] = useState(() => {
+    if (typeof window === "undefined") return TOC_DEFAULT;
+    const saved = localStorage.getItem("eregs-toc-width");
+    return saved ? Math.max(TOC_MIN, Math.min(TOC_MAX, Number(saved))) : TOC_DEFAULT;
+  });
+  const [allTocs, setAllTocs] = useState<Map<string, PartToc>>(new Map());
+
+  const handleTocResize = useCallback((delta: number) => {
+    setTocWidth(w => {
+      const next = Math.min(TOC_MAX, Math.max(TOC_MIN, w + delta));
+      localStorage.setItem("eregs-toc-width", String(next));
+      return next;
+    });
+  }, []);
+
+  const toggleTocCollapse = useCallback(() => {
+    setTocCollapsed(c => {
+      localStorage.setItem("eregs-toc-collapsed", c ? "0" : "1");
+      return !c;
+    });
+  }, []);
+
+  // Fetch the initial TOC for the default part on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/reader-data?part=390&toc=1");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.toc) {
+          setAllTocs(prev => {
+            const next = new Map(prev);
+            next.set("390", data.toc);
+            return next;
+          });
+        }
+      } catch { /* silent */ }
+    })();
+  }, []);
+
+  const fetchTocForPart = useCallback(async (part: string) => {
+    if (allTocs.has(part)) return;
+    try {
+      const res = await fetch(`/api/reader-data?part=${part}&toc=1`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.toc) {
+        setAllTocs(prev => {
+          const next = new Map(prev);
+          next.set(part, data.toc);
+          return next;
+        });
+      }
+    } catch { /* silent */ }
+  }, [allTocs]);
+
+  const handleNavigate = useCallback((section: string) => {
+    router.push(`/regs/${section}`);
+  }, [router]);
 
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Top nav — just logo */}
+      {/* Top nav — matches reader header */}
       <nav style={{
         position: "fixed", top: 0, left: 0, right: 0, height: "var(--nav-h)",
         background: "var(--white)", borderBottom: "1px solid var(--border)",
         display: "flex", alignItems: "center", padding: "0 14px", gap: 8, zIndex: 200,
       }}>
-        <a href="/" style={{ flexShrink: 0, display: "flex", alignItems: "center", textDecoration: "none" }}>
+        <Link href="/" style={{ flexShrink: 0, display: "flex", alignItems: "center", textDecoration: "none" }}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 626 224" height="26" style={{ display: "block", flexShrink: 0 }}>
             <g>
               <path fill="none" d="M170.4,53.6h-27v31.4h28.2c2.8,0,5.3-1.4,7.7-4.1s3.6-6.6,3.6-11.5-1.4-9-4.1-11.6c-2.9-2.8-5.7-4.2-8.4-4.2Z"/>
@@ -44,9 +115,45 @@ export function AnnotationPageLayout({
             </g>
             <path fill="#000" d="M586.7,59.5c0,5.6-4.4,10-10.1,10s-10.1-4.4-10.1-10,4.5-9.8,10.1-9.8,10.1,4.4,10.1,9.8ZM569,59.5c0,4.4,3.2,7.9,7.7,7.9s7.5-3.5,7.5-7.8-3.2-7.9-7.6-7.9-7.6,3.5-7.6,7.9h0ZM575,64.7h-2.3v-9.8c.9-.2,2.2-.3,3.8-.3s2.7.3,3.4.7c.5.4,1,1.2,1,2.2s-.8,1.9-2,2.3h0c1,.5,1.5,1.2,1.8,2.5.3,1.5.5,2.1.7,2.5h-2.5c-.3-.4-.5-1.3-.8-2.4-.2-1.1-.8-1.6-2-1.6h-1.1v4h0ZM575.1,59.1h1.1c1.3,0,2.3-.4,2.3-1.4s-.7-1.5-2.1-1.5-1,0-1.3,0v2.8Z"/>
           </svg>
-        </a>
+        </Link>
 
-        <div style={{ flex: 1 }} />
+        {isMobile ? (
+          <div style={{ flex: 1 }} />
+        ) : (
+          <>
+            {/* Desktop: TOC collapse toggle */}
+            <button onClick={toggleTocCollapse} title={tocCollapsed ? "Show table of contents" : "Hide table of contents"} style={{
+              width: 34, height: 34, borderRadius: 8,
+              border: tocCollapsed ? "1px solid var(--border)" : "1px solid var(--accent-border)",
+              background: tocCollapsed ? "var(--white)" : "var(--accent-bg)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: tocCollapsed ? "var(--text2)" : "var(--accent)",
+              cursor: "pointer", flexShrink: 0,
+            }}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+                <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+              </svg>
+            </button>
+
+            {/* Search bar */}
+            <div style={{
+              flex: 1, maxWidth: 520, display: "flex", alignItems: "center", gap: 8,
+              background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8,
+              padding: "0 10px", height: 34
+            }}>
+              <svg width="14" height="14" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" placeholder="Search regulations, guidance, insights…" style={{
+                flex: 1, border: "none", background: "transparent",
+                fontSize: 13, color: "var(--text)", outline: "none",
+              }} />
+              <kbd style={{
+                fontSize: 11, color: "var(--text3)", background: "var(--bg3)",
+                padding: "1px 5px", borderRadius: 4, border: "1px solid var(--border)", fontFamily: "inherit"
+              }}>/</kbd>
+            </div>
+          </>
+        )}
 
         {/* Avatar — paid only */}
         {isPaid && (
@@ -67,6 +174,47 @@ export function AnnotationPageLayout({
         display: "flex", overflow: "hidden",
       }}>
         {!isMobile && <NavRail isPaid={isPaid} />}
+
+        {/* Desktop TOC sidebar with resize handle */}
+        {!isMobile && !tocCollapsed && (
+          <>
+            <ReaderSidebar
+              allTocs={allTocs}
+              currentSection=""
+              open={true}
+              onClose={() => {}}
+              isMobile={false}
+              onNavigate={handleNavigate}
+              onExpandPart={fetchTocForPart}
+              width={tocWidth}
+            />
+            <ResizeHandle
+              side="left"
+              onResize={handleTocResize}
+              onDoubleClick={toggleTocCollapse}
+            />
+          </>
+        )}
+
+        {/* Collapsed TOC tab */}
+        {!isMobile && tocCollapsed && (
+          <div
+            onClick={toggleTocCollapse}
+            title="Expand table of contents"
+            style={{
+              width: 28, flexShrink: 0, background: "var(--white)",
+              borderRight: "1px solid var(--border)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", writingMode: "vertical-rl",
+              fontSize: 10, fontWeight: 600, color: "var(--text3)",
+              letterSpacing: "0.08em", textTransform: "uppercase",
+              userSelect: "none",
+            }}
+          >
+            <span style={{ transform: "rotate(180deg)" }}>Contents</span>
+          </div>
+        )}
+
         <main style={{
           flex: 1, overflowY: "auto", minWidth: 0, background: "var(--bg)",
           WebkitOverflowScrolling: "touch",
@@ -80,4 +228,3 @@ export function AnnotationPageLayout({
     </div>
   );
 }
-

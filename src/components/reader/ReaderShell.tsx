@@ -116,13 +116,24 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   // ── Resizable panel widths (desktop only) ──────────────────────────────
   const TOC_MIN = 200, TOC_MAX = 420, TOC_DEFAULT = 290;
   const INS_MIN = 240, INS_MAX = 440, INS_DEFAULT = 296;
-  const [tocWidth, setTocWidth] = useState(TOC_DEFAULT);
+  const [tocWidth, setTocWidth] = useState(() => {
+    if (typeof window === "undefined") return TOC_DEFAULT;
+    const saved = localStorage.getItem("eregs-toc-width");
+    return saved ? Math.max(TOC_MIN, Math.min(TOC_MAX, Number(saved))) : TOC_DEFAULT;
+  });
   const [insWidth, setInsWidth] = useState(INS_DEFAULT);
   // Track collapsed state separately from open state for desktop
-  const [tocCollapsed, setTocCollapsed] = useState(false);
+  const [tocCollapsed, setTocCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("eregs-toc-collapsed") === "1";
+  });
 
   const handleTocResize = useCallback((delta: number) => {
-    setTocWidth(w => Math.min(TOC_MAX, Math.max(TOC_MIN, w + delta)));
+    setTocWidth(w => {
+      const next = Math.min(TOC_MAX, Math.max(TOC_MIN, w + delta));
+      localStorage.setItem("eregs-toc-width", String(next));
+      return next;
+    });
   }, []);
 
   const handleInsResize = useCallback((delta: number) => {
@@ -130,7 +141,10 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   }, []);
 
   const toggleTocCollapse = useCallback(() => {
-    setTocCollapsed(c => !c);
+    setTocCollapsed(c => {
+      localStorage.setItem("eregs-toc-collapsed", c ? "0" : "1");
+      return !c;
+    });
   }, []);
 
   // ── Section state ───────────────────────────────────────────────────────
