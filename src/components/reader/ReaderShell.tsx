@@ -308,8 +308,6 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         if (data.id && data.id !== localId) {
           reconcileId(localId, data.id);
         }
-        // If it was a toggle-delete, the response has { deleted: true, id }
-        // The local state already removed it, so nothing to reconcile
         setIsAuthed(true);
       } else if (res.status === 401) {
         setIsAuthed(false);
@@ -332,8 +330,6 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       })
       .then((serverAnnotations: Annotation[]) => {
         setIsAuthed(true);
-        // Merge: server annotations + any local-only ones not yet synced
-        // De-duplicate by paragraphId + type (server wins if both exist)
         const serverKeys = new Set(
           serverAnnotations.map(a => `${a.paragraphId}:${a.type}`)
         );
@@ -342,7 +338,6 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         );
         setAnnotations([...serverAnnotations, ...unsyncedLocal]);
 
-        // Try to sync any remaining local annotations
         for (const local of unsyncedLocal) {
           syncToServer(local.id, {
             type: local.type, paragraphId: local.paragraphId,
@@ -353,8 +348,6 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       })
       .catch(() => {
         setIsAuthed(false);
-        // Not logged in — keep any existing local annotations for this section
-        // but clear server annotations from other sections
         setAnnotations(prev => prev.filter(
           a => a.id.startsWith("local-") || a.section === currentSectionId
         ));
@@ -393,13 +386,11 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     const removing = allSelectedHighlighted;
 
     if (removing) {
-      // Capture IDs before removing from state (needed for API delete)
       const toRemove = annotations.filter(
         a => pids.includes(a.paragraphId) && a.type === "HIGHLIGHT"
       );
       setAnnotations(prev => prev.filter(a => !(pids.includes(a.paragraphId) && a.type === "HIGHLIGHT")));
 
-      // Delete from server
       for (const anno of toRemove) {
         if (!anno.id.startsWith("local-")) {
           fetch(`/api/annotations?id=${anno.id}`, { method: "DELETE" }).catch(() => {});
@@ -421,7 +412,6 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         }));
       setAnnotations(prev => [...prev, ...newAnnotations]);
 
-      // Sync each to server, reconcile IDs
       for (const anno of newAnnotations) {
         syncToServer(anno.id, {
           type: "HIGHLIGHT", paragraphId: anno.paragraphId,
@@ -452,14 +442,12 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       showToast("Note updated");
 
       if (editingNote.id.startsWith("local-")) {
-        // Never synced — try to create on server
         syncToServer(editingNote.id, {
           type: editingNote.type, paragraphId: editingNote.paragraphId,
           part: editingNote.part, section: editingNote.section,
           note: text, regVersion: editingNote.regVersion || "",
         });
       } else {
-        // Already on server — PATCH
         fetch("/api/annotations", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -467,15 +455,25 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         }).catch(() => {});
       }
     } else {
-      // Create new notes — local first
-      const pids = [...selectedPids];
+      // Create new notes — note text only on last selected paragraph (by document order),
+      // others get a NOTE with null text (blue dot indicator only, no bubble)
+      const pids = [...selectedPids].sort((a, b) => {
+        const idxA = currentSection.content.findIndex((n, i) =>
+          makeParagraphId(currentSectionId, n.label, i) === a
+        );
+        const idxB = currentSection.content.findIndex((n, i) =>
+          makeParagraphId(currentSectionId, n.label, i) === b
+        );
+        return idxA - idxB;
+      });
+      const lastPid = pids[pids.length - 1];
       const newAnnotations: Annotation[] = pids.map(pid => ({
         id: makeLocalId(),
         type: "NOTE" as const,
         paragraphId: pid,
         part: currentPart,
         section: currentSectionId,
-        note: text,
+        note: pid === lastPid ? text : null,
         regVersion: "",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -484,29 +482,43 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       showToast("Note saved");
       clearSelection();
 
-      // Sync each to server, reconcile IDs
       for (const anno of newAnnotations) {
         syncToServer(anno.id, {
           type: "NOTE", paragraphId: anno.paragraphId,
           part: currentPart, section: currentSectionId,
-          note: text, regVersion: "",
+          note: anno.note, regVersion: "",
         });
       }
     }
     setEditingNote(null);
   }, [editingNote, selectedPids, currentPart, currentSectionId, showToast, clearSelection, syncToServer]);
 
-  // Delete note — local first, then server
+  // Delete note — also removes sibling blue-dot annotations created in the same group
   const handleDeleteNote = useCallback(async () => {
     if (!editingNote) return;
-    setAnnotations(prev => prev.filter(a => a.id !== editingNote.id));
+
+    // Find sibling blue-dot annotations (NOTE with null text in same section)
+    const siblingsToDelete = annotations.filter(
+      a => a.id !== editingNote.id &&
+           a.type === "NOTE" &&
+           a.section === editingNote.section &&
+           !a.note
+    );
+
+    // Remove note and all siblings from local state
+    const idsToRemove = new Set([editingNote.id, ...siblingsToDelete.map(a => a.id)]);
+    setAnnotations(prev => prev.filter(a => !idsToRemove.has(a.id)));
     showToast("Note deleted");
 
-    if (!editingNote.id.startsWith("local-")) {
-      fetch(`/api/annotations?id=${editingNote.id}`, { method: "DELETE" }).catch(() => {});
+    // Delete each from server
+    for (const id of idsToRemove) {
+      if (!id.startsWith("local-")) {
+        fetch(`/api/annotations?id=${id}`, { method: "DELETE" }).catch(() => {});
+      }
     }
+
     setEditingNote(null);
-  }, [editingNote, showToast]);
+  }, [editingNote, annotations, showToast]);
 
   // Copy with citation
   const handleCopy = useCallback(() => {
@@ -548,13 +560,11 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     }).join(" | ");
   }, [selectedPids, editingNote, currentSection, currentSectionId]);
 
-  // Click outside to clear selection
   const handleMainClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (!target.closest("[data-para]") &&
         !target.closest(".action-bar") &&
         !target.closest(".note-bubble")) {
-      // Only clear if clicking on the main background, not on paragraphs
     }
   }, []);
 
