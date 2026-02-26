@@ -95,6 +95,7 @@ export async function GET(request: NextRequest) {
         color: h.color,
         createdAt: h.createdAt.toISOString(),
         updatedAt: h.createdAt.toISOString(),
+        impactedByChange: h.impactedByChange,
       })));
     }
 
@@ -113,6 +114,7 @@ export async function GET(request: NextRequest) {
         note: n.text,
         createdAt: n.createdAt.toISOString(),
         updatedAt: n.updatedAt.toISOString(),
+        impactedByChange: n.impactedByChange,
       })));
     }
 
@@ -129,6 +131,7 @@ export async function GET(request: NextRequest) {
         section: b.sectionId,
         createdAt: b.createdAt.toISOString(),
         updatedAt: b.createdAt.toISOString(),
+        impactedByChange: b.impactedByChange,
       })));
     }
 

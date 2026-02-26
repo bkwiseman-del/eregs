@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
         section: h.sectionId,
         color: h.color,
         createdAt: h.createdAt.toISOString(),
+        impactedByChange: h.impactedByChange,
       })),
       ...notes.map(n => ({
         id: n.id,
@@ -53,6 +54,7 @@ export async function GET(request: NextRequest) {
         note: n.text,
         createdAt: n.createdAt.toISOString(),
         updatedAt: n.updatedAt.toISOString(),
+        impactedByChange: n.impactedByChange,
       })),
       ...bookmarks.map(b => ({
         id: b.id,
@@ -61,6 +63,7 @@ export async function GET(request: NextRequest) {
         part: b.cfr49Part,
         section: b.sectionId,
         createdAt: b.createdAt.toISOString(),
+        impactedByChange: b.impactedByChange,
       })),
     ];
 

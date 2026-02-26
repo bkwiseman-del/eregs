@@ -91,6 +91,75 @@ export function slugToAppendixIdentifier(slug: string): string | null {
   return `Appendix ${letter} to Part ${part}`;
 }
 
+// ── VERSION METADATA ────────────────────────────────────────────────────────
+
+export interface ContentVersion {
+  date: string;           // effective date (e.g. "2024-11-18")
+  amendment_date: string; // when the amendment was made
+  issue_date: string;     // Federal Register publication date
+  identifier: string;     // section number (e.g. "390.5")
+  name: string;           // full section title
+  part: string;
+  substantive: boolean;
+  removed: boolean;
+  type: "section" | "appendix";
+}
+
+/**
+ * Fetch per-section version history from eCFR for a given part.
+ * Returns the full list of ContentVersion entries (multiple per section).
+ */
+export async function getVersionsForPart(part: string): Promise<ContentVersion[]> {
+  try {
+    const res = await fetch(
+      `${ECFR_BASE}/api/versioner/v1/versions/title-${TITLE}?part=${part}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.content_versions ?? []) as ContentVersion[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * For a given part, return a map of section identifier → latest amendment_date.
+ * Used by incremental sync to skip sections that haven't changed.
+ */
+export function getLatestAmendmentDates(versions: ContentVersion[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const v of versions) {
+    const existing = map.get(v.identifier);
+    if (!existing || v.amendment_date > existing) {
+      map.set(v.identifier, v.amendment_date);
+    }
+  }
+  return map;
+}
+
+/**
+ * Check if our cached data is stale by comparing to eCFR's latest version date.
+ */
+export async function checkStaleness(part: string): Promise<{
+  stale: boolean;
+  cachedVersion: string | null;
+  latestVersion: string;
+}> {
+  const latestVersion = await getLatestDate();
+  try {
+    const cached = await db.cachedPartToc.findUnique({ where: { part } });
+    const cachedVersion = cached?.ecfrVersion ?? null;
+    return {
+      stale: cachedVersion !== latestVersion,
+      cachedVersion,
+      latestVersion,
+    };
+  } catch {
+    return { stale: true, cachedVersion: null, latestVersion };
+  }
+}
+
 // ── CACHED DATA ACCESS ───────────────────────────────────────────────────────
 
 export async function fetchSection(part: string, section: string): Promise<EcfrSection | null> {
@@ -432,22 +501,58 @@ export async function syncStructure(): Promise<{ parts: number; errors: string[]
   return { parts: partCount, errors };
 }
 
-// Step 2: Sync all sections for one part
-export async function syncPart(part: string): Promise<{ sections: number; errors: string[] }> {
+// Step 2: Sync all sections for one part (incremental — skips unchanged sections)
+export async function syncPart(part: string): Promise<{
+  updated: number;
+  skipped: number;
+  changesDetected: string[];
+  errors: string[];
+}> {
   const date = await getLatestDate();
   const errors: string[] = [];
-  let sectionCount = 0;
+  let updated = 0;
+  let skipped = 0;
+  const changesDetected: string[] = [];
 
   // Get the TOC for this part (from cache or fresh)
   const toc = await fetchPartStructure(part);
   if (!toc) {
-    return { sections: 0, errors: [`Could not get TOC for part ${part}`] };
+    return { updated: 0, skipped: 0, changesDetected: [], errors: [`Could not get TOC for part ${part}`] };
   }
+
+  // Fetch version metadata from eCFR to determine which sections changed
+  const versions = await getVersionsForPart(part);
+  const latestAmendments = getLatestAmendmentDates(versions);
+
+  // Build a lookup of current cached versions
+  const cachedSections = await db.cachedSection.findMany({
+    where: { part },
+    select: { section: true, ecfrVersion: true },
+  });
+  const cachedVersionMap = new Map(cachedSections.map(c => [c.section, c.ecfrVersion]));
 
   const allSections = toc.subparts.flatMap(sp => sp.sections);
   for (const sec of allSections) {
     try {
-      // Build URL differently for appendixes vs sections
+      // Check if this section needs re-fetching.
+      // For regular sections, look up by identifier (e.g. "390.5").
+      // For appendixes, the versions API uses a different identifier format.
+      const cachedVersion = cachedVersionMap.get(sec.section);
+      if (cachedVersion) {
+        // Determine the eCFR identifier for version lookup
+        const ecfrId = sec.isAppendix
+          ? slugToAppendixIdentifier(sec.section) ?? sec.section
+          : sec.section;
+        const latestAmendment = latestAmendments.get(ecfrId);
+
+        // Skip if cached version is at or after the latest amendment
+        if (latestAmendment && cachedVersion >= latestAmendment) {
+          skipped++;
+          continue;
+        }
+      }
+
+      // Section needs fetching — either new, or amended since last cache
       let url: string;
       if (sec.isAppendix) {
         const identifier = slugToAppendixIdentifier(sec.section);
@@ -472,6 +577,13 @@ export async function syncPart(part: string): Promise<{ sections: number; errors
         continue;
       }
 
+      // Check if content actually changed (for change tracking)
+      const existing = cachedVersion
+        ? await db.cachedSection.findUnique({ where: { section: sec.section }, select: { rawXml: true } })
+        : null;
+      const contentChanged = existing?.rawXml ? existing.rawXml !== xml : false;
+
+      // Update the cache
       await db.cachedSection.upsert({
         where: { section: sec.section },
         create: {
@@ -489,14 +601,97 @@ export async function syncPart(part: string): Promise<{ sections: number; errors
           ecfrVersion: date, rawXml: xml,
         },
       });
-      sectionCount++;
+
+      // If content changed, record in RegChangelog and flag annotations
+      if (contentChanged) {
+        changesDetected.push(sec.section);
+        await recordSectionChange(part, sec.section, parsed, date, versions);
+        await flagImpactedAnnotations(sec.section);
+      }
+
+      // Also upsert RegSection for version tracking
+      const regSectionId = `49-${sec.section}`;
+      await db.regSection.upsert({
+        where: { id: regSectionId },
+        create: {
+          id: regSectionId,
+          title: parsed.title,
+          part,
+          section: sec.section,
+          rawXml: xml,
+          sectionContent: parsed.content as any,
+          ecfrVersionDate: date,
+        },
+        update: {
+          title: parsed.title,
+          rawXml: xml,
+          sectionContent: parsed.content as any,
+          ecfrVersionDate: date,
+        },
+      });
+
+      updated++;
       await new Promise(r => setTimeout(r, 150));
     } catch (e) {
       errors.push(`Error caching ${sec.section}: ${e}`);
     }
   }
 
-  return { sections: sectionCount, errors };
+  return { updated, skipped, changesDetected, errors };
+}
+
+/** Record a change in RegChangelog when section content differs from cached version */
+async function recordSectionChange(
+  part: string,
+  section: string,
+  _parsed: EcfrSection,
+  date: string,
+  versions: ContentVersion[],
+) {
+  try {
+    const regSectionId = `49-${section}`;
+
+    // Find the latest version entry for this section to get metadata
+    const sectionVersions = versions
+      .filter(v => v.identifier === section || slugToAppendixIdentifier(section) === v.identifier)
+      .sort((a, b) => b.amendment_date.localeCompare(a.amendment_date));
+
+    const latestVersion = sectionVersions[0];
+
+    await db.regChangelog.create({
+      data: {
+        sectionId: regSectionId,
+        versionDate: date,
+        changeType: latestVersion?.substantive ? "substantive" : "editorial",
+        federalRegCitation: null, // eCFR versions API doesn't include FR citation directly
+        effectiveDate: latestVersion ? new Date(latestVersion.date) : null,
+      },
+    });
+  } catch (e) {
+    console.error(`[sync] Failed to record changelog for ${section}:`, e);
+  }
+}
+
+/** Flag all highlights and notes in a changed section as potentially impacted */
+async function flagImpactedAnnotations(section: string) {
+  try {
+    await db.highlight.updateMany({
+      where: { sectionId: section, impactedByChange: false },
+      data: { impactedByChange: true },
+    });
+    await db.note.updateMany({
+      where: { sectionId: section, impactedByChange: false },
+      data: { impactedByChange: true },
+    });
+    // Bookmarks are section-level, not paragraph-level — still flag them
+    // so users know the section content changed
+    await db.bookmark.updateMany({
+      where: { sectionId: section, impactedByChange: false },
+      data: { impactedByChange: true },
+    });
+  } catch (e) {
+    console.error(`[sync] Failed to flag annotations for ${section}:`, e);
+  }
 }
 
 // ── XML PARSING ──────────────────────────────────────────────────────────────

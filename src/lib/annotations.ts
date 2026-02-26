@@ -17,6 +17,7 @@ export interface ReaderAnnotation {
   sectionTitle?: string;
   createdAt: string;
   updatedAt?: string;
+  impactedByChange?: boolean; // true when regulation changed after annotation was created
 }
 
 /** Build a stable paragraph ID from section + node info.

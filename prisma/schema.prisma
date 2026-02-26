@@ -257,6 +257,10 @@ model Highlight {
   color     String   @default("yellow")
   createdAt DateTime @default(now())
 
+  // Version tracking — for annotation safety on regulatory changes
+  regVersion       String?  // eCFR version date when highlight was created
+  impactedByChange Boolean  @default(false) // flagged when section content changes
+
   @@index([userId, sectionId])
 }
 
@@ -273,6 +277,10 @@ model Note {
   text      String   @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Version tracking — for annotation safety on regulatory changes
+  regVersion       String?  // eCFR version date when note was created
+  impactedByChange Boolean  @default(false) // flagged when section content changes
 }
 
 model Bookmark {
@@ -284,6 +292,10 @@ model Bookmark {
   sectionId String
 
   createdAt DateTime @default(now())
+
+  // Version tracking — for annotation safety on regulatory changes
+  regVersion       String?  // eCFR version date when bookmark was created
+  impactedByChange Boolean  @default(false) // flagged when section content changes
 
   @@unique([userId, sectionId])
 }

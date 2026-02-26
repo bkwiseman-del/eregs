@@ -17,9 +17,15 @@ export async function GET(request: NextRequest) {
       ? { part: cachedToc.part, title: cachedToc.title, subparts: JSON.parse(cachedToc.tocJson) }
       : null;
 
+    // Build version metadata from TOC cache
+    const meta = {
+      ecfrVersion: cachedToc?.ecfrVersion ?? null,
+      cachedAt: cachedToc?.updatedAt?.toISOString() ?? null,
+    };
+
     // If ?toc=1, return only TOC (lightweight, for sidebar expansion of non-current parts)
     if (onlyToc) {
-      return NextResponse.json({ toc, sections: [] }, {
+      return NextResponse.json({ toc, sections: [], meta }, {
         headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400" },
       });
     }
@@ -39,7 +45,7 @@ export async function GET(request: NextRequest) {
       subpartTitle: s.subpartTitle,
     }));
 
-    return NextResponse.json({ toc, sections }, {
+    return NextResponse.json({ toc, sections, meta }, {
       headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400" },
     });
   } catch (e) {
