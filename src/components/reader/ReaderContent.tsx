@@ -124,7 +124,7 @@ function RenderNode({
   // PARAGRAPH — tappable, highlightable, notable
   const pid = makeParagraphId(section, node.label, index);
   const isSelected = selectedPids.has(pid);
-  const highlight = annotations.find(a => a.paragraphId === pid && a.type === "HIGHLIGHT");
+  const highlight = annotations.find(a => a.type === "HIGHLIGHT" && (a.paragraphIds?.includes(pid) || a.paragraphId === pid));
   const noteAnnotation = annotations.find(
     a => a.type === "NOTE" && (a.paragraphIds?.includes(pid) || a.paragraphId === pid)
   );
@@ -134,7 +134,7 @@ function RenderNode({
   const isLastNoteParagraph = noteAnnotation && noteAnnotation.paragraphId === pid;
 
   return (
-    <div>
+    <div id={pid}>
       <div
         onClick={() => onTogglePara(pid)}
         style={{

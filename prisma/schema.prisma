@@ -250,14 +250,14 @@ model Highlight {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  cfr49Part   String
-  sectionId   String
-  paragraphId String
+  cfr49Part    String
+  sectionId    String
+  paragraphIds String[]
 
   color     String   @default("yellow")
   createdAt DateTime @default(now())
 
-  @@unique([userId, paragraphId])
+  @@index([userId, sectionId])
 }
 
 model Note {

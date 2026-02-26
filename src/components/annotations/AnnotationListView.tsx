@@ -270,8 +270,8 @@ export function AnnotationListView({ type, emptyIcon, emptyTitle, emptyDescripti
 function AnnotationCard({ annotation: a, type }: { annotation: ReaderAnnotation; type: AnnotationType }) {
   const label = paragraphLabel(a.paragraphId, a.paragraphIds);
 
-  // Link to the section — in future, could include paragraph hash for scroll-to
-  const href = `/regs/${a.section}`;
+  const firstPid = a.paragraphIds?.[0] ?? a.paragraphId;
+  const href = `/regs/${a.section}${firstPid ? `#${firstPid}` : ""}`;
 
   return (
     <Link href={href} style={{ textDecoration: "none" }}>
@@ -309,35 +309,86 @@ function AnnotationCard({ annotation: a, type }: { annotation: ReaderAnnotation;
             </span>
           )}
 
-          {/* Note text (for notes) */}
-          {type === "NOTE" && a.note && (
-            <p style={{
-              fontSize: 13.5, color: "var(--text)", lineHeight: 1.55,
-              marginBottom: 4,
-              display: "-webkit-box", WebkitLineClamp: 3,
-              WebkitBoxOrient: "vertical", overflow: "hidden",
-            }}>
-              {a.note}
-            </p>
+          {/* Note: regulation text context + user's note */}
+          {type === "NOTE" && (
+            <>
+              {a.textSnippet && (
+                <p style={{
+                  fontFamily: "'Lora', Georgia, serif",
+                  fontSize: 12.5, color: "var(--text3)", lineHeight: 1.5,
+                  marginBottom: 6,
+                  display: "-webkit-box", WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical", overflow: "hidden",
+                  fontStyle: "italic",
+                }}>
+                  {a.textSnippet}
+                </p>
+              )}
+              {a.note && (
+                <p style={{
+                  fontSize: 13.5, color: "var(--text)", lineHeight: 1.55,
+                  marginBottom: 4,
+                  display: "-webkit-box", WebkitLineClamp: 3,
+                  WebkitBoxOrient: "vertical", overflow: "hidden",
+                }}>
+                  {a.note}
+                </p>
+              )}
+            </>
           )}
 
-          {/* For highlights, show the paragraph reference */}
+          {/* For highlights, show text snippet or paragraph reference */}
           {type === "HIGHLIGHT" && (
-            <p style={{
-              fontSize: 13, color: "var(--text2)", lineHeight: 1.5,
-              fontStyle: "italic",
-            }}>
-              Highlighted paragraph{label ? ` ${label}` : ""}
-            </p>
+            a.textSnippet ? (
+              <p style={{
+                fontFamily: "'Lora', Georgia, serif",
+                fontSize: 13.5, color: "var(--text)", lineHeight: 1.6,
+                marginBottom: 4,
+                display: "-webkit-box", WebkitLineClamp: 3,
+                WebkitBoxOrient: "vertical", overflow: "hidden",
+              }}>
+                {a.textSnippet}
+              </p>
+            ) : (
+              <p style={{
+                fontSize: 13, color: "var(--text2)", lineHeight: 1.5,
+                fontStyle: "italic",
+              }}>
+                Highlighted {(a.paragraphIds?.length ?? 1) > 1
+                  ? `${a.paragraphIds!.length} paragraphs`
+                  : `paragraph${label ? ` ${label}` : ""}`}
+              </p>
+            )
           )}
 
-          {/* For bookmarks, show section ref */}
+          {/* For bookmarks, show section title + text preview */}
           {type === "BOOKMARK" && (
-            <p style={{
-              fontSize: 13, color: "var(--text2)", lineHeight: 1.5,
-            }}>
-              Bookmarked {sectionDisplayName(a.section)}
-            </p>
+            <>
+              {a.sectionTitle && (
+                <p style={{
+                  fontFamily: "'Lora', Georgia, serif",
+                  fontSize: 14, color: "var(--text)", lineHeight: 1.4,
+                  fontWeight: 500, marginBottom: 4,
+                }}>
+                  {a.sectionTitle}
+                </p>
+              )}
+              {a.textSnippet ? (
+                <p style={{
+                  fontFamily: "'Lora', Georgia, serif",
+                  fontSize: 12.5, color: "var(--text3)", lineHeight: 1.5,
+                  marginBottom: 4,
+                  display: "-webkit-box", WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical", overflow: "hidden",
+                }}>
+                  {a.textSnippet}
+                </p>
+              ) : (
+                <p style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.5 }}>
+                  Saved section
+                </p>
+              )}
+            </>
           )}
 
           {/* Timestamp */}

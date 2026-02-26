@@ -36,7 +36,8 @@ export async function GET(request: NextRequest) {
       ...highlights.map(h => ({
         id: h.id,
         type: "HIGHLIGHT" as const,
-        paragraphId: h.paragraphId,
+        paragraphId: h.paragraphIds[h.paragraphIds.length - 1] ?? "",
+        paragraphIds: h.paragraphIds,
         part: h.cfr49Part,
         section: h.sectionId,
         color: h.color,
@@ -90,23 +91,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (type === "HIGHLIGHT") {
-      if (!paragraphId) {
-        return NextResponse.json({ error: "Missing paragraphId" }, { status: 400 });
-      }
-      // Toggle: delete if exists, create if not
-      const existing = await db.highlight.findUnique({
-        where: { userId_paragraphId: { userId: user.id, paragraphId } },
-      });
-      if (existing) {
-        await db.highlight.delete({ where: { id: existing.id } });
-        return NextResponse.json({ deleted: true, id: existing.id });
+      const pids: string[] = paragraphIds || (paragraphId ? [paragraphId] : []);
+      if (pids.length === 0) {
+        return NextResponse.json({ error: "Missing paragraphIds" }, { status: 400 });
       }
       const highlight = await db.highlight.create({
-        data: { userId: user.id, cfr49Part: part, sectionId: section, paragraphId },
+        data: { userId: user.id, cfr49Part: part, sectionId: section, paragraphIds: pids },
       });
       return NextResponse.json({
         id: highlight.id, type: "HIGHLIGHT",
-        paragraphId: highlight.paragraphId,
+        paragraphId: pids[pids.length - 1],
+        paragraphIds: pids,
         part: highlight.cfr49Part, section: highlight.sectionId,
         color: highlight.color, createdAt: highlight.createdAt.toISOString(),
       }, { status: 201 });

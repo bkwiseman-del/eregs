@@ -12,9 +12,11 @@ interface Props {
   tocCollapsed?: boolean;
   isMobile: boolean;
   isPaid?: boolean;
+  onBookmark?: () => void;
+  isBookmarked?: boolean;
 }
 
-export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSidebar, onToggleToc, tocCollapsed, isMobile, isPaid = false }: Props) {
+export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSidebar, onToggleToc, tocCollapsed, isMobile, isPaid = false, onBookmark, isBookmarked = false }: Props) {
   return (
     <nav style={{
       position: "fixed", top: 0, left: 0, right: 0, height: "var(--nav-h)",
@@ -115,12 +117,14 @@ export function TopNav({ section, insightsOpen, onToggleInsights, onToggleSideba
 
       {/* Bookmark — paid only */}
       {isPaid && (
-        <button title="Bookmark" style={{
+        <button onClick={onBookmark} title={isBookmarked ? "Remove bookmark" : "Bookmark this section"} style={{
           width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center",
-          borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer", flexShrink: 0,
-          background: "var(--white)", color: "var(--text2)", transition: "all 0.15s"
+          borderRadius: 8, border: "1px solid", cursor: "pointer", flexShrink: 0,
+          background: isBookmarked ? "var(--accent-bg)" : "var(--white)",
+          borderColor: isBookmarked ? "var(--accent-border)" : "var(--border)",
+          color: isBookmarked ? "var(--accent)" : "var(--text2)", transition: "all 0.15s"
         }}>
-          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+          <svg width="14" height="14" fill={isBookmarked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
         </button>
       )}
 

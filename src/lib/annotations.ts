@@ -7,12 +7,14 @@
 export interface ReaderAnnotation {
   id: string;
   type: "HIGHLIGHT" | "NOTE" | "BOOKMARK";
-  paragraphId: string;      // single pid (highlights) or last pid (note bubble placement)
-  paragraphIds?: string[];  // note only — all pids in the selection
+  paragraphId: string;      // last pid (note/highlight bubble placement) or empty (bookmark)
+  paragraphIds?: string[];  // note + highlight — all pids in the selection
   part: string;
   section: string;
   note?: string | null;
   color?: string;
+  textSnippet?: string;
+  sectionTitle?: string;
   createdAt: string;
   updatedAt?: string;
 }

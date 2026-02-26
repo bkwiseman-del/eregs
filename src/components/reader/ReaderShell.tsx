@@ -176,6 +176,30 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     };
   }, [currentSectionId, currentToc, storeRevision, serverAdjacent]);
 
+  // ── Scroll to hash target ──────────────────────────────────────────────
+  const scrollToHash = useCallback(() => {
+    const hash = window.location.hash.slice(1);
+    if (!hash || !mainRef.current) return;
+    // Small delay to let React render the content
+    requestAnimationFrame(() => {
+      const el = document.getElementById(hash);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      // Brief highlight pulse
+      const inner = el.firstElementChild as HTMLElement | null;
+      if (inner) {
+        inner.style.transition = "box-shadow 0.3s";
+        inner.style.boxShadow = "0 0 0 3px var(--accent-border)";
+        setTimeout(() => { inner.style.boxShadow = "none"; }, 2000);
+      }
+    });
+  }, []);
+
+  // Scroll to hash on initial mount (direct URL visit with fragment)
+  useEffect(() => {
+    scrollToHash();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Navigation ──────────────────────────────────────────────────────────
   const navigateTo = useCallback(async (sectionId: string) => {
     const part = sectionId.includes("-app")
@@ -215,17 +239,18 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       const match = window.location.pathname.match(/\/regs\/(.+)/);
       if (!match) return;
       const sectionId = match[1];
+      const hash = window.location.hash;
       const cached = getSection(sectionId);
       if (cached) {
         setCurrentSectionId(sectionId);
-        mainRef.current?.scrollTo(0, 0);
+        if (hash) scrollToHash(); else mainRef.current?.scrollTo(0, 0);
       } else {
         // Different part not yet loaded — fetch then update
         const part = sectionId.split(".")[0];
         fetchPartData(part).then(() => {
           setStoreRevision(r => r + 1);
           setCurrentSectionId(sectionId);
-          mainRef.current?.scrollTo(0, 0);
+          if (hash) scrollToHash(); else mainRef.current?.scrollTo(0, 0);
         });
       }
     };
@@ -342,9 +367,9 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
           const body: Record<string, unknown> = {
             type: local.type, part: local.part, section: local.section,
           };
-          if (local.type === "NOTE") {
+          if (local.type === "NOTE" || local.type === "HIGHLIGHT") {
             body.paragraphIds = local.paragraphIds || [local.paragraphId];
-            body.note = local.note;
+            if (local.type === "NOTE") body.note = local.note;
           } else {
             body.paragraphId = local.paragraphId;
           }
@@ -377,11 +402,47 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     setSelectedPids(new Set());
   }, []);
 
+  // Check if current section is bookmarked
+  const isBookmarked = useMemo(() => {
+    return annotations.some(a => a.type === "BOOKMARK" && a.section === currentSectionId);
+  }, [annotations, currentSectionId]);
+
+  // Toggle bookmark for current section
+  const handleBookmark = useCallback(async () => {
+    if (isBookmarked) {
+      const bookmark = annotations.find(a => a.type === "BOOKMARK" && a.section === currentSectionId);
+      if (!bookmark) return;
+      setAnnotations(prev => prev.filter(a => a.id !== bookmark.id));
+      showToast("Bookmark removed");
+      if (!bookmark.id.startsWith("local-")) {
+        fetch(`/api/annotations?id=${bookmark.id}&type=BOOKMARK`, { method: "DELETE" }).catch(() => {});
+      }
+    } else {
+      const localId = makeLocalId();
+      const newBookmark: ReaderAnnotation = {
+        id: localId,
+        type: "BOOKMARK",
+        paragraphId: `${currentSectionId}-p0`,
+        part: currentPart,
+        section: currentSectionId,
+        createdAt: new Date().toISOString(),
+      };
+      setAnnotations(prev => [...prev, newBookmark]);
+      showToast("Section bookmarked");
+      syncToServer(localId, {
+        type: "BOOKMARK",
+        paragraphId: `${currentSectionId}-p0`,
+        part: currentPart,
+        section: currentSectionId,
+      });
+    }
+  }, [isBookmarked, annotations, currentSectionId, currentPart, showToast, syncToServer]);
+
   // Check if all selected paragraphs are highlighted
   const allSelectedHighlighted = useMemo(() => {
     if (selectedPids.size === 0) return false;
     return [...selectedPids].every(pid =>
-      annotations.some(a => a.paragraphId === pid && a.type === "HIGHLIGHT")
+      annotations.some(a => a.type === "HIGHLIGHT" && (a.paragraphIds?.includes(pid) || a.paragraphId === pid))
     );
   }, [selectedPids, annotations]);
 
@@ -391,10 +452,13 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     const removing = allSelectedHighlighted;
 
     if (removing) {
-      const toRemove = annotations.filter(
-        a => pids.includes(a.paragraphId) && a.type === "HIGHLIGHT"
+      // Find all highlight rows that overlap with selected pids, remove entire rows
+      const toRemove = annotations.filter(a =>
+        a.type === "HIGHLIGHT" &&
+        pids.some(pid => a.paragraphIds?.includes(pid) || a.paragraphId === pid)
       );
-      setAnnotations(prev => prev.filter(a => !(pids.includes(a.paragraphId) && a.type === "HIGHLIGHT")));
+      const removeIds = new Set(toRemove.map(a => a.id));
+      setAnnotations(prev => prev.filter(a => !removeIds.has(a.id)));
 
       for (const anno of toRemove) {
         if (!anno.id.startsWith("local-")) {
@@ -402,24 +466,33 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         }
       }
     } else {
-      const newAnnotations: ReaderAnnotation[] = pids
-        .filter(pid => !annotations.some(a => a.paragraphId === pid && a.type === "HIGHLIGHT"))
-        .map(pid => ({
-          id: makeLocalId(),
-          type: "HIGHLIGHT" as const,
-          paragraphId: pid,
-          part: currentPart,
-          section: currentSectionId,
-          createdAt: new Date().toISOString(),
-        }));
-      setAnnotations(prev => [...prev, ...newAnnotations]);
+      // Create ONE highlight with all selected paragraph IDs (sorted by document order)
+      const sortedPids = pids.sort((a, b) => {
+        const idxA = currentSection.content.findIndex((n, i) =>
+          makeParagraphId(currentSectionId, n.label, i) === a
+        );
+        const idxB = currentSection.content.findIndex((n, i) =>
+          makeParagraphId(currentSectionId, n.label, i) === b
+        );
+        return idxA - idxB;
+      });
 
-      for (const anno of newAnnotations) {
-        syncToServer(anno.id, {
-          type: "HIGHLIGHT", paragraphId: anno.paragraphId,
-          part: currentPart, section: currentSectionId,
-        });
-      }
+      const localId = makeLocalId();
+      const newHighlight: ReaderAnnotation = {
+        id: localId,
+        type: "HIGHLIGHT",
+        paragraphId: sortedPids[sortedPids.length - 1],
+        paragraphIds: sortedPids,
+        part: currentPart,
+        section: currentSectionId,
+        createdAt: new Date().toISOString(),
+      };
+      setAnnotations(prev => [...prev, newHighlight]);
+
+      syncToServer(localId, {
+        type: "HIGHLIGHT", paragraphIds: sortedPids,
+        part: currentPart, section: currentSectionId,
+      });
     }
 
     const msg = removing
@@ -427,7 +500,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       : `${pids.length === 1 ? "1 paragraph" : `${pids.length} paragraphs`} highlighted`;
     showToast(msg);
     clearSelection();
-  }, [selectedPids, currentPart, currentSectionId, allSelectedHighlighted, annotations, showToast, clearSelection, syncToServer]);
+  }, [selectedPids, currentPart, currentSectionId, currentSection, allSelectedHighlighted, annotations, showToast, clearSelection, syncToServer]);
 
   // Edit existing note — opens inline in ActionBar
   const handleEditNote = useCallback((annotation: ReaderAnnotation) => {
@@ -566,6 +639,8 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         tocCollapsed={tocCollapsed}
         isMobile={isMobile}
         isPaid={isPaid}
+        onBookmark={handleBookmark}
+        isBookmarked={isBookmarked}
       />
 
       <div style={{
