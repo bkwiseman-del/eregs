@@ -31,16 +31,16 @@ export function AnnotationPageLayout({
 }) {
   const isMobile = useIsMobile();
   const router = useRouter();
-  const [tocCollapsed, setTocCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("eregs-toc-collapsed") === "1";
-  });
-  const [tocWidth, setTocWidth] = useState(() => {
-    if (typeof window === "undefined") return TOC_DEFAULT;
-    const saved = localStorage.getItem("eregs-toc-width");
-    return saved ? Math.max(TOC_MIN, Math.min(TOC_MAX, Number(saved))) : TOC_DEFAULT;
-  });
+  const [tocCollapsed, setTocCollapsed] = useState(false);
+  const [tocWidth, setTocWidth] = useState(TOC_DEFAULT);
   const [allTocs, setAllTocs] = useState<Map<string, PartToc>>(new Map());
+
+  // Restore TOC state from localStorage after hydration
+  useEffect(() => {
+    const savedWidth = localStorage.getItem("eregs-toc-width");
+    if (savedWidth) setTocWidth(Math.max(TOC_MIN, Math.min(TOC_MAX, Number(savedWidth))));
+    if (localStorage.getItem("eregs-toc-collapsed") === "1") setTocCollapsed(true);
+  }, []);
 
   const handleTocResize = useCallback((delta: number) => {
     setTocWidth(w => {

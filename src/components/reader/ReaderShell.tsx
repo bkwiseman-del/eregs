@@ -47,7 +47,7 @@ function storePartSections(part: string, sections: EcfrSection[]) {
 }
 
 function getSection(sectionId: string): EcfrSection | null {
-  const part = sectionId.split(".")[0];
+  const part = sectionId.includes("-app") ? sectionId.split("-")[0] : sectionId.split(".")[0];
   return globalStore.get(part)?.sections.get(sectionId) ?? null;
 }
 
@@ -116,17 +116,17 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   // ── Resizable panel widths (desktop only) ──────────────────────────────
   const TOC_MIN = 200, TOC_MAX = 420, TOC_DEFAULT = 290;
   const INS_MIN = 240, INS_MAX = 440, INS_DEFAULT = 296;
-  const [tocWidth, setTocWidth] = useState(() => {
-    if (typeof window === "undefined") return TOC_DEFAULT;
-    const saved = localStorage.getItem("eregs-toc-width");
-    return saved ? Math.max(TOC_MIN, Math.min(TOC_MAX, Number(saved))) : TOC_DEFAULT;
-  });
+  const [tocWidth, setTocWidth] = useState(TOC_DEFAULT);
   const [insWidth, setInsWidth] = useState(INS_DEFAULT);
   // Track collapsed state separately from open state for desktop
-  const [tocCollapsed, setTocCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("eregs-toc-collapsed") === "1";
-  });
+  const [tocCollapsed, setTocCollapsed] = useState(false);
+
+  // Restore TOC state from localStorage after hydration
+  useEffect(() => {
+    const savedWidth = localStorage.getItem("eregs-toc-width");
+    if (savedWidth) setTocWidth(Math.max(TOC_MIN, Math.min(TOC_MAX, Number(savedWidth))));
+    if (localStorage.getItem("eregs-toc-collapsed") === "1") setTocCollapsed(true);
+  }, []);
 
   const handleTocResize = useCallback((delta: number) => {
     setTocWidth(w => {

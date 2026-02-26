@@ -58,6 +58,27 @@ function RenderNode({
   const indentMap = [0, 24, 48, 72, 96, 120, 144];
   const indent = indentMap[Math.min(node.level, 6)];
 
+  // HEADING (appendix section headings)
+  if (node.type === "heading") {
+    const sizes: Record<number, { fontSize: number; marginTop: number }> = {
+      1: { fontSize: 17, marginTop: 32 },
+      2: { fontSize: 15, marginTop: 24 },
+      3: { fontSize: 14, marginTop: 18 },
+    };
+    const { fontSize, marginTop } = sizes[node.headingLevel ?? 1] ?? sizes[1];
+    return (
+      <div style={{
+        fontFamily: "'Lora', Georgia, serif",
+        fontSize, fontWeight: 600, color: "var(--text)",
+        marginTop, marginBottom: 8,
+        paddingBottom: node.headingLevel === 1 ? 6 : 0,
+        borderBottom: node.headingLevel === 1 ? "1px solid var(--border)" : "none",
+      }}>
+        {node.text}
+      </div>
+    );
+  }
+
   // TABLE
   if (node.type === "table") {
     return (

@@ -17,10 +17,11 @@ export interface EcfrSection {
 
 export interface EcfrNode {
   id: string;
-  type: "paragraph" | "table" | "image";
+  type: "paragraph" | "table" | "image" | "heading";
   label?: string;
   text: string;
   level: number;
+  headingLevel?: number;  // 1, 2, or 3 for HD1/HD2/HD3
   tableHeaders?: string[];
   tableRows?: string[][];
   imageSrc?: string;
@@ -671,7 +672,7 @@ function parseParagraphs(xml: string): EcfrNode[] {
   const bodyMatch = xml.match(/<DIV8[^>]*>([\s\S]*)<\/DIV8>/) || xml.match(/<DIV9[^>]*>([\s\S]*)<\/DIV9>/);
   const body = bodyMatch ? bodyMatch[1] : xml;
 
-  const chunkRegex = /(<GPOTABLE[\s\S]*?<\/GPOTABLE>|<TABLE[\s\S]*?<\/TABLE>|<GPH[\s\S]*?<\/GPH>|<EXTRACT[\s\S]*?<\/EXTRACT>|<img[^>]*\/?>|<P>[\s\S]*?<\/P>|<FP[^>]*>[\s\S]*?<\/FP>)/gi;
+  const chunkRegex = /(<GPOTABLE[\s\S]*?<\/GPOTABLE>|<TABLE[\s\S]*?<\/TABLE>|<GPH[\s\S]*?<\/GPH>|<EXTRACT[\s\S]*?<\/EXTRACT>|<img[^>]*\/?>|<HD[123][^>]*>[\s\S]*?<\/HD[123]>|<P>[\s\S]*?<\/P>|<FP[^>]*>[\s\S]*?<\/FP>)/gi;
   const chunks = body.match(chunkRegex) || [];
 
   for (const chunk of chunks) {
@@ -770,6 +771,17 @@ function parseParagraphs(xml: string): EcfrNode[] {
         const filename = gidMatch[1].trim();
         const src = filename.startsWith("http") ? filename : `/graphics/${filename}`;
         nodes.push({ id: `img-${counter++}`, type: "image", text: "", level: 0, imageSrc: src });
+      }
+      continue;
+    }
+
+    // HEADING — <HD1>, <HD2>, <HD3> (common in appendices)
+    if (/^<HD[123]/i.test(chunk)) {
+      const lvlMatch = chunk.match(/^<HD([123])/i);
+      const headingLevel = lvlMatch ? parseInt(lvlMatch[1]) : 1;
+      const text = stripTags(chunk).trim();
+      if (text) {
+        nodes.push({ id: `h-${counter++}`, type: "heading", text, level: 0, headingLevel });
       }
       continue;
     }
