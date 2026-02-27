@@ -4,6 +4,7 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,28 +34,86 @@ export default function LoginPage() {
     router.push("/regs/390.5");
   }
 
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "10px 14px",
+    borderRadius: 8,
+    border: "1px solid var(--border2)",
+    fontSize: 13,
+    color: "var(--text)",
+    background: "var(--bg)",
+    fontFamily: "'Inter', sans-serif",
+    outline: "none",
+    transition: "border-color 0.15s",
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: "block",
+    fontSize: 12,
+    fontWeight: 500,
+    color: "var(--text2)",
+    marginBottom: 6,
+    fontFamily: "'Inter', sans-serif",
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-stone-50">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <span className="font-serif text-3xl font-semibold text-stone-900">
-            e<span className="text-orange-600">R</span>egs
-          </span>
-          <p className="mt-2 text-sm text-stone-500">Sign in to your account</p>
+    <div style={{
+      minHeight: "100dvh",
+      background: "var(--bg)",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "40px 16px",
+    }}>
+      <div style={{ maxWidth: 400, width: "100%" }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <Link href="/">
+            <Image
+              src="/images/logo-wordmark.svg"
+              alt="eRegs"
+              width={120}
+              height={43}
+              style={{ display: "inline-block" }}
+            />
+          </Link>
+          <p style={{
+            marginTop: 8,
+            fontSize: 14,
+            color: "var(--text3)",
+            fontFamily: "'Inter', sans-serif",
+          }}>
+            Sign in to your account
+          </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-8">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Form card */}
+        <div style={{
+          background: "var(--white)",
+          border: "1px solid var(--border)",
+          borderRadius: 14,
+          padding: "28px 28px 24px",
+          boxShadow: "0 2px 16px rgba(0,0,0,0.04)",
+        }}>
+          <form onSubmit={handleSubmit}>
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3.5 py-2.5">
+              <div style={{
+                fontSize: 13,
+                color: "#b91c1c",
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: 8,
+                padding: "10px 14px",
+                marginBottom: 16,
+                fontFamily: "'Inter', sans-serif",
+              }}>
                 {error}
               </div>
             )}
 
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-stone-700 mb-1.5">
-                Email address
-              </label>
+            <div style={{ marginBottom: 14 }}>
+              <label htmlFor="email" style={labelStyle}>Email address</label>
               <input
                 id="email"
                 type="email"
@@ -62,17 +121,22 @@ export default function LoginPage() {
                 autoComplete="email"
                 placeholder="you@company.com"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-lg border border-stone-300 text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                onChange={(e) => setEmail(e.target.value)}
+                style={inputStyle}
+                onFocus={(e) => (e.target.style.borderColor = "var(--accent)")}
+                onBlur={(e) => (e.target.style.borderColor = "var(--border2)")}
               />
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="password" className="block text-sm font-medium text-stone-700">
-                  Password
-                </label>
-                <Link href="/forgot-password" className="text-xs text-orange-600 hover:text-orange-700">
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                <label htmlFor="password" style={{ ...labelStyle, marginBottom: 0 }}>Password</label>
+                <Link href="/forgot-password" style={{
+                  fontSize: 11.5,
+                  color: "var(--accent)",
+                  fontWeight: 500,
+                  fontFamily: "'Inter', sans-serif",
+                }}>
                   Forgot password?
                 </Link>
               </div>
@@ -83,26 +147,47 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 placeholder="••••••••"
                 value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-lg border border-stone-300 text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                onChange={(e) => setPassword(e.target.value)}
+                style={inputStyle}
+                onFocus={(e) => (e.target.style.borderColor = "var(--accent)")}
+                onBlur={(e) => (e.target.style.borderColor = "var(--border2)")}
               />
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 px-4 bg-orange-600 hover:bg-orange-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
+              style={{
+                width: "100%",
+                padding: "11px 16px",
+                borderRadius: 9,
+                border: "none",
+                background: loading ? "var(--border2)" : "var(--accent)",
+                color: "white",
+                fontSize: 14,
+                fontWeight: 600,
+                fontFamily: "'Inter', sans-serif",
+                cursor: loading ? "not-allowed" : "pointer",
+                transition: "background 0.15s",
+              }}
             >
-              {loading ? "Signing in…" : "Sign in"}
+              {loading ? "Signing in..." : "Sign in"}
             </button>
           </form>
 
-          <p className="mt-6 text-xs text-center text-stone-400">
-            Don&apos;t have an account?{" "}
-            <Link href="/signup" className="text-orange-600 hover:text-orange-700 font-medium">
-              Start free trial
-            </Link>
-          </p>
+          <div style={{
+            borderTop: "1px solid var(--border)",
+            marginTop: 20,
+            paddingTop: 16,
+            textAlign: "center",
+          }}>
+            <p style={{ fontSize: 12, color: "var(--text3)", fontFamily: "'Inter', sans-serif" }}>
+              Don&apos;t have an account?{" "}
+              <Link href="/signup" style={{ color: "var(--accent)", fontWeight: 500 }}>
+                Start free trial
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
     </div>

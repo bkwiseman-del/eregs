@@ -16,6 +16,7 @@ import { ResizeHandle } from "./ResizeHandle";
 import { Toast } from "./Toast";
 import { ProBanner } from "./ProBanner";
 import { MobileBottomTabs } from "@/components/shared/MobileBottomTabs";
+import { BodyScrollLock } from "@/components/shared/BodyScrollLock";
 
 // ── DATA STORE ──────────────────────────────────────────────────────────────
 
@@ -763,6 +764,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <BodyScrollLock />
       <TopNav
         section={currentSection}
         insightsOpen={insightsOpen}

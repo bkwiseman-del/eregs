@@ -14,37 +14,37 @@ const PLANS = [
     name: "Pro",
     price: "$9",
     period: "/mo",
-    annual: "$89 billed annually",
-    description: "Full regulation access with annotations, insights, and offline reading.",
+    description: "Full regulation access with annotations, insights, AI assistant, and search.",
     features: [
-      "Highlights, notes & bookmarks",
-      "FMCSA guidance & Trucksafe insights",
-      "Version history & change diffs",
-      "Copy with full CFR citation",
-      "Offline access via PWA",
+      "Full regulatory text, always current",
+      "Highlights, bookmarks & notes",
+      "FMCSA guidance & Trucksafe content",
+      "AI regulatory assistant",
+      "Full-text search",
+      "Change notifications",
     ],
+    popular: true,
   },
   {
     id: "fleet" as Plan,
     name: "Fleet Manager",
     price: "$19",
     period: "/mo",
-    annual: "$189 billed annually",
     description: "Everything in Pro, plus driver management and acknowledgement tracking.",
     features: [
       "Everything in Pro",
       "Invite & manage drivers",
-      "Acknowledgement records",
+      "Acknowledgement receipt workflow",
       "2 free driver invites to start",
-      "$4 per driver invite",
+      "$4 per additional driver invite",
+      "Downloadable DQ file receipts",
     ],
-    recommended: true,
   },
 ];
 
 export default function SignupPage() {
   const router = useRouter();
-  const [selectedPlan, setSelectedPlan] = useState<Plan>("fleet");
+  const [selectedPlan, setSelectedPlan] = useState<Plan>("pro");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -93,6 +93,28 @@ export default function SignupPage() {
     router.push(`/onboarding/checkout?plan=${selectedPlan}`);
   }
 
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "10px 14px",
+    borderRadius: 8,
+    border: "1px solid var(--border2)",
+    fontSize: 13,
+    color: "var(--text)",
+    background: "var(--bg)",
+    fontFamily: "'Inter', sans-serif",
+    outline: "none",
+    transition: "border-color 0.15s",
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: "block",
+    fontSize: 12,
+    fontWeight: 500,
+    color: "var(--text2)",
+    marginBottom: 6,
+    fontFamily: "'Inter', sans-serif",
+  };
+
   return (
     <div style={{
       minHeight: "100dvh",
@@ -101,19 +123,20 @@ export default function SignupPage() {
       overflowY: "auto",
     }}>
       <div style={{ maxWidth: 680, margin: "0 auto" }}>
-
         {/* Logo */}
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <Image
-            src="/images/logo-wordmark.svg"
-            alt="eRegs"
-            width={120}
-            height={43}
-            style={{ display: "inline-block" }}
-          />
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <Link href="/">
+            <Image
+              src="/images/logo-wordmark.svg"
+              alt="eRegs"
+              width={120}
+              height={43}
+              style={{ display: "inline-block" }}
+            />
+          </Link>
           <p style={{
             marginTop: 8,
-            fontSize: 13,
+            fontSize: 14,
             color: "var(--text3)",
             fontFamily: "'Inter', sans-serif",
           }}>
@@ -125,10 +148,10 @@ export default function SignupPage() {
         <div style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
-          gap: 12,
+          gap: 14,
           marginBottom: 24,
         }}>
-          {PLANS.map(plan => {
+          {PLANS.map((plan) => {
             const selected = selectedPlan === plan.id;
             return (
               <button
@@ -138,28 +161,27 @@ export default function SignupPage() {
                 style={{
                   position: "relative",
                   textAlign: "left",
-                  background: "var(--white)",
+                  background: selected ? "var(--accent-bg)" : "var(--white)",
                   border: `2px solid ${selected ? "var(--accent)" : "var(--border)"}`,
-                  borderRadius: 12,
-                  padding: "20px",
+                  borderRadius: 14,
+                  padding: 22,
                   cursor: "pointer",
-                  transition: "border-color 0.15s, box-shadow 0.15s",
+                  transition: "border-color 0.15s, box-shadow 0.15s, background 0.15s",
                   boxShadow: selected ? "0 2px 16px rgba(201,106,42,0.12)" : "none",
                 }}
               >
-                {plan.recommended && (
+                {plan.popular && (
                   <span style={{
                     position: "absolute",
-                    top: 14,
-                    right: 14,
+                    top: -10,
+                    left: 18,
                     fontSize: 10,
                     fontWeight: 700,
                     letterSpacing: "0.06em",
                     textTransform: "uppercase",
-                    background: "var(--accent-bg)",
-                    color: "var(--accent-text)",
-                    border: "1px solid var(--accent-border)",
-                    padding: "3px 8px",
+                    background: "var(--accent)",
+                    color: "white",
+                    padding: "3px 10px",
                     borderRadius: 99,
                   }}>
                     Popular
@@ -168,8 +190,8 @@ export default function SignupPage() {
 
                 {/* Radio indicator */}
                 <div style={{
-                  width: 16,
-                  height: 16,
+                  width: 18,
+                  height: 18,
                   borderRadius: "50%",
                   border: `2px solid ${selected ? "var(--accent)" : "var(--border2)"}`,
                   display: "flex",
@@ -180,8 +202,8 @@ export default function SignupPage() {
                 }}>
                   {selected && (
                     <div style={{
-                      width: 8,
-                      height: 8,
+                      width: 10,
+                      height: 10,
                       borderRadius: "50%",
                       background: "var(--accent)",
                     }} />
@@ -189,7 +211,7 @@ export default function SignupPage() {
                 </div>
 
                 <div style={{
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: 600,
                   color: "var(--text)",
                   marginBottom: 6,
@@ -198,9 +220,9 @@ export default function SignupPage() {
                   {plan.name}
                 </div>
 
-                <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 2 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 10 }}>
                   <span style={{
-                    fontSize: 26,
+                    fontSize: 28,
                     fontWeight: 700,
                     color: "var(--text)",
                     fontFamily: "'Lora', serif",
@@ -210,17 +232,8 @@ export default function SignupPage() {
                   <span style={{ fontSize: 13, color: "var(--text3)" }}>{plan.period}</span>
                 </div>
 
-                <div style={{
-                  fontSize: 11,
-                  color: "var(--text3)",
-                  marginBottom: 12,
-                  fontFamily: "'Inter', sans-serif",
-                }}>
-                  {plan.annual}
-                </div>
-
                 <p style={{
-                  fontSize: 12,
+                  fontSize: 12.5,
                   color: "var(--text2)",
                   lineHeight: 1.55,
                   marginBottom: 14,
@@ -230,7 +243,7 @@ export default function SignupPage() {
                 </p>
 
                 <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                  {plan.features.map(f => (
+                  {plan.features.map((f) => (
                     <li key={f} style={{
                       display: "flex",
                       alignItems: "flex-start",
@@ -241,8 +254,8 @@ export default function SignupPage() {
                       fontFamily: "'Inter', sans-serif",
                     }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                        stroke="var(--accent)" strokeWidth="2.5"
-                        style={{ flexShrink: 0, marginTop: 1 }}>
+                        stroke="var(--green)" strokeWidth="2.5"
+                        style={{ flexShrink: 0, marginTop: 2 }}>
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                       {f}
@@ -258,8 +271,9 @@ export default function SignupPage() {
         <div style={{
           background: "var(--white)",
           border: "1px solid var(--border)",
-          borderRadius: 12,
+          borderRadius: 14,
           padding: "28px 28px 24px",
+          boxShadow: "0 2px 16px rgba(0,0,0,0.04)",
         }}>
           <div style={{
             fontSize: 11,
@@ -291,104 +305,47 @@ export default function SignupPage() {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
-                <label style={{
-                  display: "block",
-                  fontSize: 12,
-                  fontWeight: 500,
-                  color: "var(--text2)",
-                  marginBottom: 6,
-                  fontFamily: "'Inter', sans-serif",
-                }}>
-                  Full name
-                </label>
+                <label style={labelStyle}>Full name</label>
                 <input
                   type="text"
                   required
                   autoComplete="name"
                   placeholder="Jane Smith"
                   value={name}
-                  onChange={e => setName(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "9px 12px",
-                    borderRadius: 8,
-                    border: "1px solid var(--border2)",
-                    fontSize: 13,
-                    color: "var(--text)",
-                    background: "var(--bg)",
-                    fontFamily: "'Inter', sans-serif",
-                    outline: "none",
-                  }}
-                  onFocus={e => e.target.style.borderColor = "var(--accent)"}
-                  onBlur={e => e.target.style.borderColor = "var(--border2)"}
+                  onChange={(e) => setName(e.target.value)}
+                  style={inputStyle}
+                  onFocus={(e) => (e.target.style.borderColor = "var(--accent)")}
+                  onBlur={(e) => (e.target.style.borderColor = "var(--border2)")}
                 />
               </div>
               <div>
-                <label style={{
-                  display: "block",
-                  fontSize: 12,
-                  fontWeight: 500,
-                  color: "var(--text2)",
-                  marginBottom: 6,
-                  fontFamily: "'Inter', sans-serif",
-                }}>
-                  Work email
-                </label>
+                <label style={labelStyle}>Work email</label>
                 <input
                   type="email"
                   required
                   autoComplete="email"
                   placeholder="you@company.com"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "9px 12px",
-                    borderRadius: 8,
-                    border: "1px solid var(--border2)",
-                    fontSize: 13,
-                    color: "var(--text)",
-                    background: "var(--bg)",
-                    fontFamily: "'Inter', sans-serif",
-                    outline: "none",
-                  }}
-                  onFocus={e => e.target.style.borderColor = "var(--accent)"}
-                  onBlur={e => e.target.style.borderColor = "var(--border2)"}
+                  onChange={(e) => setEmail(e.target.value)}
+                  style={inputStyle}
+                  onFocus={(e) => (e.target.style.borderColor = "var(--accent)")}
+                  onBlur={(e) => (e.target.style.borderColor = "var(--border2)")}
                 />
               </div>
             </div>
 
             <div style={{ marginBottom: 20 }}>
-              <label style={{
-                display: "block",
-                fontSize: 12,
-                fontWeight: 500,
-                color: "var(--text2)",
-                marginBottom: 6,
-                fontFamily: "'Inter', sans-serif",
-              }}>
-                Password
-              </label>
+              <label style={labelStyle}>Password</label>
               <input
                 type="password"
                 required
                 autoComplete="new-password"
                 placeholder="At least 8 characters"
                 value={password}
-                onChange={e => setPassword(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "9px 12px",
-                  borderRadius: 8,
-                  border: "1px solid var(--border2)",
-                  fontSize: 13,
-                  color: "var(--text)",
-                  background: "var(--bg)",
-                  fontFamily: "'Inter', sans-serif",
-                  outline: "none",
-                }}
-                onFocus={e => e.target.style.borderColor = "var(--accent)"}
-                onBlur={e => e.target.style.borderColor = "var(--border2)"}
+                onChange={(e) => setPassword(e.target.value)}
+                style={inputStyle}
+                onFocus={(e) => (e.target.style.borderColor = "var(--accent)")}
+                onBlur={(e) => (e.target.style.borderColor = "var(--border2)")}
               />
             </div>
 
@@ -410,9 +367,8 @@ export default function SignupPage() {
               }}
             >
               {loading
-                ? "Creating account…"
-                : `Get started with ${PLANS.find(p => p.id === selectedPlan)?.name}`
-              }
+                ? "Creating account..."
+                : `Start free trial — ${PLANS.find((p) => p.id === selectedPlan)?.name}`}
             </button>
           </form>
 
@@ -432,9 +388,9 @@ export default function SignupPage() {
             </p>
             <p style={{ fontSize: 12, color: "var(--text3)", fontFamily: "'Inter', sans-serif" }}>
               Need enterprise?{" "}
-              <Link href="/contact" style={{ color: "var(--accent)", fontWeight: 500 }}>
+              <a href="mailto:support@eregs.app" style={{ color: "var(--accent)", fontWeight: 500 }}>
                 Contact us
-              </Link>
+              </a>
             </p>
           </div>
 
@@ -446,13 +402,12 @@ export default function SignupPage() {
             fontFamily: "'Inter', sans-serif",
             lineHeight: 1.6,
           }}>
-            By signing up you agree to our{" "}
+            14-day free trial, no credit card required. By signing up you agree to our{" "}
             <Link href="/terms" style={{ color: "var(--text2)" }}>Terms of Service</Link>
             {" "}and{" "}
             <Link href="/privacy" style={{ color: "var(--text2)" }}>Privacy Policy</Link>.
           </p>
         </div>
-
       </div>
     </div>
   );

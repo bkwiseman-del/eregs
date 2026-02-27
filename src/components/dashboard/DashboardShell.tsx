@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { NavRail } from "@/components/reader/NavRail";
 import { ResizeHandle } from "@/components/reader/ResizeHandle";
+import { BodyScrollLock } from "@/components/shared/BodyScrollLock";
 import { AppNav } from "@/components/shared/AppNav";
 import { MobileBottomTabs } from "@/components/shared/MobileBottomTabs";
 
@@ -636,6 +637,7 @@ export function DashboardShell({ userName }: { userName: string }) {
 
   return (
     <>
+      <BodyScrollLock />
       <AppNav isMobile={isMobile} />
 
       <div style={{ display: "flex", height: "100vh", paddingTop: "var(--nav-h)", overflow: "hidden" }}>

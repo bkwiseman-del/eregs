@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { BodyScrollLock } from "@/components/shared/BodyScrollLock";
 import { AppNav } from "@/components/shared/AppNav";
 import { NavRail } from "@/components/reader/NavRail";
 import { MobileBottomTabs } from "@/components/shared/MobileBottomTabs";
@@ -259,6 +260,7 @@ export function SearchShell({ isPaid, userName }: { isPaid: boolean; userName: s
 
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <BodyScrollLock />
       {/* AppNav with search input */}
       <AppNav
         isMobile={isMobile}

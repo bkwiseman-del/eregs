@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
+import { BodyScrollLock } from "@/components/shared/BodyScrollLock";
 import type { PartToc } from "@/lib/ecfr";
 import { NavRail } from "@/components/reader/NavRail";
 import { ReaderSidebar } from "@/components/reader/ReaderSidebar";
@@ -105,6 +106,7 @@ export function AnnotationPageLayout({
 
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <BodyScrollLock />
       <AppNav
         isMobile={isMobile}
         leftAction={!isMobile ? (
