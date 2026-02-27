@@ -337,16 +337,6 @@ function AnnotationCard({ annotation: a, type }: { annotation: ReaderAnnotation;
         }} />
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Paragraph reference */}
-          {label && (
-            <span style={{
-              fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
-              color: "var(--text3)", marginBottom: 3, display: "block",
-            }}>
-              {label}
-            </span>
-          )}
-
           {/* Note: regulation text context + user's note */}
           {type === "NOTE" && (
             <>

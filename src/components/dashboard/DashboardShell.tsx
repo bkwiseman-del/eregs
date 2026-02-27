@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { NavRail } from "@/components/reader/NavRail";
+import { ResizeHandle } from "@/components/reader/ResizeHandle";
 import { AppNav } from "@/components/shared/AppNav";
 import { MobileBottomTabs } from "@/components/shared/MobileBottomTabs";
+
+const SIDEBAR_MIN = 240, SIDEBAR_MAX = 420, SIDEBAR_DEFAULT = 300;
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(false);
@@ -40,7 +43,9 @@ interface Activity {
   type: "HIGHLIGHT" | "NOTE" | "BOOKMARK";
   section: string;
   part: string;
+  paragraphId?: string;
   sectionTitle?: string;
+  textSnippet?: string;
   note?: string;
   createdAt: string;
 }
@@ -488,9 +493,13 @@ const actIcons: Record<string, { bg: string; border: string; color: string; icon
 function ActivityItem({ activity }: { activity: Activity }) {
   const a = actIcons[activity.type] ?? actIcons.HIGHLIGHT;
   const label = activity.type === "HIGHLIGHT" ? "Highlighted" : activity.type === "NOTE" ? "Note on" : "Saved";
+  const snippet = activity.note || activity.textSnippet;
+  const href = activity.paragraphId
+    ? `/regs/${activity.section}#${activity.paragraphId}`
+    : `/regs/${activity.section}`;
 
   return (
-    <a href={`/regs/${activity.section}`} style={{ textDecoration: "none" }}>
+    <a href={href} style={{ textDecoration: "none" }}>
       <div style={{
         display: "flex", gap: 10, padding: "11px 0",
         borderBottom: "1px solid var(--border)", cursor: "pointer", transition: "opacity .12s",
@@ -499,7 +508,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
       onMouseLeave={e => e.currentTarget.style.opacity = "1"}
       >
         <div style={{
-          width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+          width: 30, height: 30, borderRadius: 8, flexShrink: 0, marginTop: 1,
           display: "flex", alignItems: "center", justifyContent: "center",
           background: a.bg, border: `1px solid ${a.border}`, color: a.color,
         }}>
@@ -508,15 +517,21 @@ function ActivityItem({ activity }: { activity: Activity }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.45 }}>
             {label} <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "var(--accent)" }}>§ {activity.section}</span>
+            <span style={{ color: "var(--text3)", fontSize: 11, marginLeft: 6 }}>{relativeTime(activity.createdAt)}</span>
           </div>
-          {activity.note && (
-            <div style={{ fontSize: 11.5, color: "var(--text3)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              &ldquo;{activity.note}&rdquo;
+          {activity.sectionTitle && (
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {activity.sectionTitle}
             </div>
           )}
-          <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>
-            {relativeTime(activity.createdAt)}
-          </div>
+          {snippet && (
+            <div style={{
+              fontSize: 11.5, color: "var(--text3)", marginTop: 2, lineHeight: 1.5,
+              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+            }}>
+              {activity.note ? `"${snippet}"` : snippet}
+            </div>
+          )}
         </div>
       </div>
     </a>
@@ -542,9 +557,36 @@ export function DashboardShell({ userName }: { userName: string }) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [activity, setActivity] = useState<Activity[]>([]);
+  const [activityTotal, setActivityTotal] = useState(0);
+  const [activityLoading, setActivityLoading] = useState(false);
   const [playingVideo, setPlayingVideo] = useState<FeedItem | null>(null);
   const [playingPodcast, setPlayingPodcast] = useState<FeedItem | null>(null);
   const [podcastIsPlaying, setPodcastIsPlaying] = useState(false);
+
+  // Sidebar resize state
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("eregs-dashboard-sidebar-w");
+    if (saved) setSidebarWidth(Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Number(saved))));
+    if (localStorage.getItem("eregs-dashboard-sidebar-collapsed") === "1") setSidebarCollapsed(true);
+  }, []);
+
+  const handleSidebarResize = useCallback((delta: number) => {
+    setSidebarWidth(w => {
+      const next = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w + delta));
+      localStorage.setItem("eregs-dashboard-sidebar-w", String(next));
+      return next;
+    });
+  }, []);
+
+  const toggleSidebarCollapse = useCallback(() => {
+    setSidebarCollapsed(c => {
+      localStorage.setItem("eregs-dashboard-sidebar-collapsed", c ? "0" : "1");
+      return !c;
+    });
+  }, []);
 
   // Fetch feed
   const fetchFeed = useCallback(async (type: FilterType, offset = 0, append = false) => {
@@ -572,12 +614,20 @@ export function DashboardShell({ userName }: { userName: string }) {
   }, []);
 
   // Fetch activity
-  useEffect(() => {
-    fetch("/api/dashboard/activity?limit=8")
-      .then(r => r.ok ? r.json() : [])
-      .then(setActivity)
-      .catch(() => {});
+  const fetchActivity = useCallback(async (offset = 0, append = false) => {
+    if (append) setActivityLoading(true);
+    try {
+      const res = await fetch(`/api/dashboard/activity?limit=5&offset=${offset}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setActivity(prev => append ? [...prev, ...data.items] : data.items);
+      setActivityTotal(data.total);
+    } catch { /* silent */ } finally {
+      setActivityLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchActivity(); }, [fetchActivity]);
 
   // Fetch on filter change
   useEffect(() => { fetchFeed(filter); }, [filter, fetchFeed]);
@@ -675,44 +725,81 @@ export function DashboardShell({ userName }: { userName: string }) {
         {playingPodcast && <div style={{ height: 64 }} />}
       </main>
 
-      {/* Right Sidebar */}
-      <aside className="dashboard-right-sidebar" style={{
-        width: 300, flexShrink: 0, background: "var(--white)",
-        borderLeft: "1px solid var(--border)", overflowY: "auto",
-        display: "flex", flexDirection: "column",
-      }}>
-        {/* Greeting */}
-        <div style={{ padding: "18px 18px 14px", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 500, marginBottom: 3 }}>{greeting()}</div>
-          <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Lora', serif" }}>{userName}</div>
-          <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 5, lineHeight: 1.5 }}>{todayDate()}</div>
-        </div>
+      {/* Resize handle for sidebar */}
+      {!isMobile && !sidebarCollapsed && (
+        <ResizeHandle
+          side="right"
+          onResize={handleSidebarResize}
+          onDoubleClick={toggleSidebarCollapse}
+        />
+      )}
 
-        {/* Recent Activity */}
-        <div style={{ padding: "18px 18px 24px" }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text3)", letterSpacing: ".09em", textTransform: "uppercase", marginBottom: 10 }}>
-            Recent Activity
+      {/* Collapsed sidebar tab */}
+      {!isMobile && sidebarCollapsed && (
+        <div
+          onClick={toggleSidebarCollapse}
+          title="Expand sidebar"
+          className="dashboard-right-sidebar"
+          style={{
+            width: 28, flexShrink: 0, background: "var(--white)",
+            borderLeft: "1px solid var(--border)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", writingMode: "vertical-rl",
+            fontSize: 10, fontWeight: 600, color: "var(--text3)",
+            letterSpacing: "0.08em", textTransform: "uppercase",
+            userSelect: "none",
+          }}
+        >
+          Activity
+        </div>
+      )}
+
+      {/* Right Sidebar */}
+      {!sidebarCollapsed && (
+        <aside className="dashboard-right-sidebar" style={{
+          width: sidebarWidth, flexShrink: 0, background: "var(--white)",
+          borderLeft: "1px solid var(--border)", overflowY: "auto",
+          display: "flex", flexDirection: "column",
+        }}>
+          {/* Greeting */}
+          <div style={{ padding: "18px 18px 14px", borderBottom: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 500, marginBottom: 3 }}>{greeting()}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Lora', serif" }}>{userName}</div>
+            <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 5, lineHeight: 1.5 }}>{todayDate()}</div>
           </div>
 
-          {activity.length === 0 ? (
-            <div style={{ fontSize: 12, color: "var(--text3)", lineHeight: 1.5 }}>
-              No annotations yet. Start reading regulations and add highlights or notes to see your activity here.
+          {/* Recent Activity */}
+          <div style={{ padding: "18px 18px 24px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text3)", letterSpacing: ".09em", textTransform: "uppercase", marginBottom: 10 }}>
+              Recent Activity
             </div>
-          ) : (
-            <>
-              {activity.map(a => <ActivityItem key={a.id} activity={a} />)}
-              <a href="/notes" style={{
-                display: "block", width: "100%", padding: 11, background: "none",
-                border: "1px dashed var(--border2)", borderRadius: 9,
-                color: "var(--text3)", fontSize: 13, textAlign: "center",
-                cursor: "pointer", marginTop: 12, textDecoration: "none",
-              }}>
-                View all activity →
-              </a>
-            </>
-          )}
-        </div>
-      </aside>
+
+            {activity.length === 0 ? (
+              <div style={{ fontSize: 12, color: "var(--text3)", lineHeight: 1.5 }}>
+                No annotations yet. Start reading regulations and add highlights or notes to see your activity here.
+              </div>
+            ) : (
+              <>
+                {activity.map(a => <ActivityItem key={a.id} activity={a} />)}
+                {activity.length < activityTotal && (
+                  <button
+                    onClick={() => fetchActivity(activity.length, true)}
+                    disabled={activityLoading}
+                    style={{
+                      display: "block", width: "100%", padding: 11, background: "none",
+                      border: "1px dashed var(--border2)", borderRadius: 9,
+                      color: "var(--text3)", fontSize: 13, textAlign: "center",
+                      cursor: "pointer", marginTop: 12, fontFamily: "'Inter', sans-serif",
+                    }}
+                  >
+                    {activityLoading ? "Loading…" : "Show more activity"}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </aside>
+      )}
 
       {/* Modals */}
       {playingVideo && <VideoModal item={playingVideo} onClose={() => setPlayingVideo(null)} />}
