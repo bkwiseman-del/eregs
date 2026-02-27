@@ -559,19 +559,58 @@ export function AiChat({ isPaid, onSubmitRef }: Props) {
         )}
       </div>
 
-      {/* Rate limit info */}
-      {remaining !== null && (
-        <div
-          style={{
-            padding: "4px 24px",
-            fontSize: 11,
-            color: "var(--text3)",
-            textAlign: "center",
-          }}
-        >
-          {remaining} question{remaining !== 1 ? "s" : ""} remaining today
+      {/* Footer: disclaimer + usage meter */}
+      <div
+        style={{
+          borderTop: "1px solid var(--border)",
+          padding: "8px 24px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexShrink: 0,
+        }}
+      >
+        {/* AI disclaimer */}
+        <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+          <svg width="12" height="12" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span style={{ fontSize: 10.5, color: "var(--text3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            AI can make mistakes. Verify important regulatory details.
+          </span>
         </div>
-      )}
+
+        {/* Usage meter */}
+        {remaining !== null && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            <div
+              style={{
+                width: 60,
+                height: 4,
+                borderRadius: 2,
+                background: "var(--border)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  width: `${((20 - remaining) / 20) * 100}%`,
+                  borderRadius: 2,
+                  background: remaining <= 3 ? "#dc2626" : remaining <= 8 ? "#ca8a04" : "var(--accent)",
+                  transition: "width 0.3s, background 0.3s",
+                }}
+              />
+            </div>
+            <span style={{ fontSize: 10.5, color: remaining <= 3 ? "#dc2626" : "var(--text3)", whiteSpace: "nowrap", fontWeight: remaining <= 3 ? 600 : 400 }}>
+              {20 - remaining}/{20}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
