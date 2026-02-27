@@ -213,7 +213,8 @@ RULES:
 5. Format your response using markdown: use headers, bullet points, and bold for emphasis.
 6. Keep answers concise but thorough. Aim for 2-4 paragraphs unless the topic requires more detail.
 7. If RELATED CONTENT (videos, articles) is provided, include a "Related Content" section at the end. Use the exact URLs provided for content links — these are the only external links you should use.
-8. When referencing FMCSA Guidance, always note it is advisory, not legally binding.`;
+8. When referencing FMCSA Guidance, always note it is advisory, not legally binding.
+9. If FMCSA GUIDANCE AVAILABLE is listed in the context, you MUST include an "## FMCSA Guidance" section in your response that mentions the relevant guidance topics and links to them using [FMCSA Guidance on TOPIC](/regs/SECTION?insights=open) format. This section should briefly describe what additional interpretive detail the guidance covers and note that it is advisory.`;
 
 // ── Handler ──────────────────────────────────────────────────────────────────
 
@@ -339,7 +340,7 @@ export async function POST(request: NextRequest) {
 
     const insightContext =
       uniqueInsights.length > 0
-        ? `\n\nFMCSA GUIDANCE AVAILABLE (advisory, not legally binding — mention relevant topics and link with [FMCSA Guidance on TOPIC](/regs/SECTION?insights=open)):\n${uniqueInsights.join("\n")}`
+        ? `\n\n=== FMCSA GUIDANCE AVAILABLE ===\nThe following FMCSA guidance topics are relevant. You MUST include an "## FMCSA Guidance" section in your answer that references these topics and links to them. These are advisory and not legally binding.\n${uniqueInsights.join("\n")}`
         : "";
 
     const contentContext =
