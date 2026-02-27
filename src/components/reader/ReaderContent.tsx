@@ -1,25 +1,34 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { EcfrSection, EcfrNode } from "@/lib/ecfr";
 import type { ReaderAnnotation } from "@/lib/annotations";
 import { makeParagraphId } from "@/lib/annotations";
 import { VersionHistoryPanel } from "./VersionHistoryPanel";
+import { DiffView } from "./DiffView";
+import { ImpactReviewPanel } from "./ImpactReviewPanel";
+import { diffSections } from "@/lib/diff";
 
 interface Props {
   section: EcfrSection;
+  currentSectionContent?: EcfrNode[];
   adjacent: { prev: string | null; next: string | null };
   onNavigate?: (section: string) => void;
   annotations: ReaderAnnotation[];
+  impactedAnnotations?: ReaderAnnotation[];
   selectedPids: Set<string>;
   onTogglePara: (pid: string) => void;
   onEditNote: (annotation: ReaderAnnotation) => void;
   historicalDate?: string | null;
   historicalLoading?: boolean;
   onSelectHistoricalDate?: (date: string | null) => void;
+  diffMode?: boolean;
+  onToggleDiff?: () => void;
   isPro?: boolean;
   impactedAnnotationCount?: number;
   onDismissImpact?: () => void;
+  onKeepAnnotation?: (id: string) => void;
+  onDeleteAnnotation?: (id: string, type: string) => void;
 }
 
 function NoteBubble({ annotation, onEdit }: { annotation: ReaderAnnotation; onEdit: () => void }) {
@@ -259,15 +268,33 @@ function RenderNode({
 }
 
 export function ReaderContent({
-  section, adjacent, onNavigate, annotations,
+  section, currentSectionContent, adjacent, onNavigate, annotations,
+  impactedAnnotations,
   selectedPids, onTogglePara, onEditNote,
-  historicalDate, historicalLoading, onSelectHistoricalDate, isPro,
+  historicalDate, historicalLoading, onSelectHistoricalDate,
+  diffMode, onToggleDiff,
+  isPro,
   impactedAnnotationCount, onDismissImpact,
+  onKeepAnnotation, onDeleteAnnotation,
 }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [reviewMode, setReviewMode] = useState(false);
 
-  // Close panel on section change
-  useEffect(() => { setHistoryOpen(false); }, [section.section]);
+  // Close panels on section change
+  useEffect(() => { setHistoryOpen(false); setReviewMode(false); }, [section.section]);
+
+  // Close review mode when all impacted annotations are resolved
+  useEffect(() => {
+    if (reviewMode && (!impactedAnnotations || impactedAnnotations.length === 0)) {
+      setReviewMode(false);
+    }
+  }, [reviewMode, impactedAnnotations]);
+
+  // Compute diff results when in diff mode
+  const diffResults = useMemo(() => {
+    if (!diffMode || !historicalDate || !currentSectionContent) return null;
+    return diffSections(section.content, currentSectionContent);
+  }, [diffMode, historicalDate, section.content, currentSectionContent]);
 
   const navClick = (sectionId: string) => (e: React.MouseEvent) => {
     if (onNavigate) {
@@ -333,6 +360,21 @@ export function ReaderContent({
               >
                 View current
               </button>
+              {onToggleDiff && !historicalLoading && (
+                <>
+                  <span style={{ color: "var(--border2)", margin: "0 2px" }}>·</span>
+                  <button
+                    onClick={onToggleDiff}
+                    style={{
+                      background: "none", border: "none", cursor: "pointer",
+                      fontSize: 12, color: diffMode ? "#dc2626" : "var(--accent)", fontWeight: 600,
+                      padding: 0, fontFamily: "'Inter', sans-serif",
+                    }}
+                  >
+                    {diffMode ? "Hide changes" : "Show changes"}
+                  </button>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -414,33 +456,66 @@ export function ReaderContent({
 
       {/* Annotation Impact Warning Banner */}
       {!historicalDate && impactedAnnotationCount && impactedAnnotationCount > 0 ? (
-        <div style={{
-          background: "#fef3c7", border: "1px solid #fde68a",
-          borderRadius: 8, padding: "10px 14px", marginBottom: 20,
-          display: "flex", alignItems: "center", gap: 10,
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#92400e" strokeWidth="2" style={{ flexShrink: 0 }}>
-            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-          <span style={{ flex: 1, fontSize: 12, color: "#92400e", lineHeight: 1.4 }}>
-            Regulations in this section have changed since you made {impactedAnnotationCount === 1 ? "an annotation" : `${impactedAnnotationCount} annotations`}. Some highlights or notes may reference changed text.
-          </span>
-          {onDismissImpact && (
-            <button
-              onClick={onDismissImpact}
-              style={{
-                padding: "4px 10px", borderRadius: 5,
-                background: "rgba(146, 64, 14, 0.1)", border: "1px solid rgba(146, 64, 14, 0.2)",
-                fontSize: 11, fontWeight: 600, color: "#92400e", cursor: "pointer",
-                whiteSpace: "nowrap", flexShrink: 0,
-                fontFamily: "'Inter', sans-serif",
-              }}
-            >
-              Dismiss
-            </button>
+        <>
+          <div style={{
+            background: "#fef3c7", border: "1px solid #fde68a",
+            borderRadius: 8, padding: "10px 14px", marginBottom: reviewMode ? 0 : 20,
+            borderBottomLeftRadius: reviewMode ? 0 : 8,
+            borderBottomRightRadius: reviewMode ? 0 : 8,
+            display: "flex", alignItems: "center", gap: 10,
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#92400e" strokeWidth="2" style={{ flexShrink: 0 }}>
+              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            <span style={{ flex: 1, fontSize: 12, color: "#92400e", lineHeight: 1.4 }}>
+              Regulations in this section have changed since you made {impactedAnnotationCount === 1 ? "an annotation" : `${impactedAnnotationCount} annotations`}. Some highlights or notes may reference changed text.
+            </span>
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              {onKeepAnnotation && impactedAnnotations && impactedAnnotations.length > 0 && (
+                <button
+                  onClick={() => setReviewMode(v => !v)}
+                  style={{
+                    padding: "4px 10px", borderRadius: 5,
+                    background: reviewMode ? "#92400e" : "rgba(146, 64, 14, 0.15)",
+                    border: "1px solid rgba(146, 64, 14, 0.3)",
+                    fontSize: 11, fontWeight: 600,
+                    color: reviewMode ? "#fff" : "#92400e",
+                    cursor: "pointer", whiteSpace: "nowrap",
+                    fontFamily: "'Inter', sans-serif",
+                  }}
+                >
+                  {reviewMode ? "Close" : `Review (${impactedAnnotationCount})`}
+                </button>
+              )}
+              {onDismissImpact && (
+                <button
+                  onClick={onDismissImpact}
+                  style={{
+                    padding: "4px 10px", borderRadius: 5,
+                    background: "rgba(146, 64, 14, 0.1)", border: "1px solid rgba(146, 64, 14, 0.2)",
+                    fontSize: 11, fontWeight: 600, color: "#92400e", cursor: "pointer",
+                    whiteSpace: "nowrap", flexShrink: 0,
+                    fontFamily: "'Inter', sans-serif",
+                  }}
+                >
+                  Dismiss all
+                </button>
+              )}
+            </div>
+          </div>
+          {reviewMode && impactedAnnotations && impactedAnnotations.length > 0 && onKeepAnnotation && onDeleteAnnotation && (
+            <ImpactReviewPanel
+              annotations={impactedAnnotations}
+              sectionContent={section.content}
+              sectionId={section.section}
+              onKeep={onKeepAnnotation}
+              onDelete={onDeleteAnnotation}
+              onClose={() => setReviewMode(false)}
+            />
           )}
-        </div>
+          {reviewMode && <div style={{ marginBottom: 20 }} />}
+        </>
       ) : null}
 
       {/* Section header */}
@@ -477,20 +552,24 @@ export function ReaderContent({
         }} />
       </div>
 
-      {/* Regulation content — tappable paragraphs */}
+      {/* Regulation content — tappable paragraphs or diff view */}
       <div style={{ marginBottom: 48 }}>
-        {section.content.map((node, i) => (
-          <RenderNode
-            key={node.id}
-            node={node}
-            index={i}
-            section={section.section}
-            annotations={annotations}
-            selectedPids={selectedPids}
-            onTogglePara={onTogglePara}
-            onEditNote={onEditNote}
-          />
-        ))}
+        {diffMode && diffResults && historicalDate ? (
+          <DiffView results={diffResults} historicalDate={historicalDate} />
+        ) : (
+          section.content.map((node, i) => (
+            <RenderNode
+              key={node.id}
+              node={node}
+              index={i}
+              section={section.section}
+              annotations={annotations}
+              selectedPids={selectedPids}
+              onTogglePara={onTogglePara}
+              onEditNote={onEditNote}
+            />
+          ))
+        )}
       </div>
 
       {/* Prev / Next */}

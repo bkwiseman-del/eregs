@@ -352,10 +352,20 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   useEffect(() => {
     setHistoricalDate(null);
     setHistoricalSection(null);
+    setDiffMode(false);
   }, [currentSectionId]);
 
   // The section to display: historical if viewing past date, otherwise current
   const displaySection = historicalDate && historicalSection ? historicalSection : currentSection;
+
+  // ── DIFF MODE ──────────────────────────────────────────────────────────────
+
+  const [diffMode, setDiffMode] = useState(false);
+
+  // Clear diff mode when historical date changes
+  useEffect(() => {
+    setDiffMode(false);
+  }, [historicalDate]);
 
   // ── ANNOTATIONS ─────────────────────────────────────────────────────────
 
@@ -710,6 +720,29 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     }
   }, [annotations, showToast]);
 
+  // Keep a single impacted annotation (dismiss its warning)
+  const handleKeepAnnotation = useCallback(async (id: string) => {
+    setAnnotations(prev => prev.map(a =>
+      a.id === id ? { ...a, impactedByChange: false } : a
+    ));
+    if (!id.startsWith("local-")) {
+      fetch("/api/annotations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, dismissImpact: true }),
+      }).catch(() => {});
+    }
+  }, []);
+
+  // Delete a single annotation
+  const handleDeleteAnnotation = useCallback(async (id: string, type: string) => {
+    setAnnotations(prev => prev.filter(a => a.id !== id));
+    if (editingNote?.id === id) setEditingNote(null);
+    if (!id.startsWith("local-")) {
+      fetch(`/api/annotations?id=${id}&type=${type}`, { method: "DELETE" }).catch(() => {});
+    }
+  }, [editingNote]);
+
   const handleMainClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (!target.closest("[data-para]") &&
@@ -808,18 +841,24 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
           {!isPaid && <ProBanner />}
           <ReaderContent
             section={displaySection}
+            currentSectionContent={currentSection.content}
             adjacent={historicalDate ? { prev: null, next: null } : adjacent}
             onNavigate={navigateTo}
             annotations={historicalDate ? [] : annotations}
+            impactedAnnotations={annotations.filter(a => a.impactedByChange)}
             selectedPids={historicalDate ? new Set() : selectedPids}
             onTogglePara={togglePara}
             onEditNote={handleEditNote}
             historicalDate={historicalDate}
             historicalLoading={historicalLoading}
             onSelectHistoricalDate={isPaid ? setHistoricalDate : undefined}
+            diffMode={diffMode}
+            onToggleDiff={() => setDiffMode(v => !v)}
             isPro={isPaid}
             impactedAnnotationCount={impactedCount}
             onDismissImpact={handleDismissImpact}
+            onKeepAnnotation={handleKeepAnnotation}
+            onDeleteAnnotation={handleDeleteAnnotation}
           />
         </main>
 
