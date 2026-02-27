@@ -4,11 +4,19 @@
 - [x] Wire bookmark toggle button in TopNav
 - [x] Multi-paragraph highlights (one row per selection, like notes)
 - [x] Better highlights page with text content from regulation
+- [x] Insights panel — real data from FMCSA guidance, YouTube videos, Trucksafe articles
+- [x] Historical version browsing + inline diff view
+- [x] Annotation impact detection and resolution flow
+- [x] Incremental reg sync with version tracking and change detection
+- [x] Mobile ActionBar positioning fix (above bottom nav)
 
 ## Core Features
 - [ ] Search — TopNav input is non-functional, no backend
-- [ ] Insights panel — hardcoded mock data, no real content or API
 - [ ] Dashboard — "coming soon" placeholder
+- [ ] FMCSA Guidance Scraper — replace manual spreadsheet with automated scraper of FMCSA Guidance Portal (~1,323 entries vs our ~603). See `memory/roadmap.md` for full plan.
+
+## Infrastructure
+- [ ] PWA / Offline Caching — service worker for offline regulation reading
 
 ## Fleet / Organization
 - [ ] Fleet management pages (`/fleet`, drivers, tablets)

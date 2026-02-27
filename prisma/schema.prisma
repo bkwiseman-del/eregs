@@ -93,6 +93,9 @@ model User {
   // Partner code used at signup (optional)
   partnerCodeId String?
   partnerCode   PartnerCode? @relation(fields: [partnerCodeId], references: [id])
+
+  // Insight requests (vote for content)
+  insightRequests InsightRequest[]
 }
 
 // ── ORGANIZATIONS ─────────────────────────────────────────────────────────────
@@ -387,6 +390,18 @@ model Insight {
   updatedAt DateTime @updatedAt
 
   createdById String?
+}
+
+model InsightRequest {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  section   String
+  type      InsightType // VIDEO or ARTICLE
+  createdAt DateTime    @default(now())
+
+  @@unique([userId, section, type])
+  @@index([section, type])
 }
 
 // ── REGULATION CONTENT CACHE (DO NOT MODIFY — populated data) ────────────────

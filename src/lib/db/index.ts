@@ -15,6 +15,14 @@ function createPrismaClient() {
   });
 }
 
+// Clear cached client after schema changes (prisma generate)
+if (process.env.NODE_ENV !== "production" && globalForPrisma.prisma) {
+  // Force refresh if new models are missing (e.g., after prisma generate)
+  if (!("insightRequest" in globalForPrisma.prisma)) {
+    globalForPrisma.prisma = undefined;
+  }
+}
+
 export const db = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;

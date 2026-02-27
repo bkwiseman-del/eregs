@@ -20,6 +20,11 @@ interface InsightsData {
   articles: Insight[];
 }
 
+interface VoteStatus {
+  videos: { count: number; voted: boolean };
+  articles: { count: number; voted: boolean };
+}
+
 interface Props {
   section: EcfrSection;
   open: boolean;
@@ -210,6 +215,124 @@ function ArticleCard({ insight }: { insight: Insight }) {
   );
 }
 
+// ── Request Content Card (vote for content) ──────────────────────────────────
+
+function RequestContentCard({
+  type,
+  sectionId,
+  voted,
+  count,
+  onVoted,
+}: {
+  type: "VIDEO" | "ARTICLE";
+  sectionId: string;
+  voted: boolean;
+  count: number;
+  onVoted: (type: "VIDEO" | "ARTICLE", count: number) => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const [localVoted, setLocalVoted] = useState(voted);
+  const [localCount, setLocalCount] = useState(count);
+  const label = type === "VIDEO" ? "videos" : "articles";
+  const icon = type === "VIDEO" ? (
+    <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+      <polygon points="5 3 19 12 5 21 5 3"/>
+    </svg>
+  ) : (
+    <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/>
+    </svg>
+  );
+
+  // Sync from parent props
+  useEffect(() => { setLocalVoted(voted); }, [voted]);
+  useEffect(() => { setLocalCount(count); }, [count]);
+
+  const handleVote = async () => {
+    if (localVoted || submitting) return;
+    setSubmitting(true);
+    // Optimistic update
+    setLocalVoted(true);
+    setLocalCount(prev => prev + 1);
+    try {
+      const res = await fetch("/api/insight-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section: sectionId, type }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLocalCount(data.count);
+        onVoted(type, data.count);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("Insight request failed:", res.status, err);
+        setLocalVoted(false);
+        setLocalCount(prev => prev - 1);
+      }
+    } catch {
+      setLocalVoted(false);
+      setLocalCount(prev => prev - 1);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{
+      textAlign: "center", padding: "20px 12px",
+      border: "1px solid var(--border)", borderRadius: 10,
+      background: "var(--bg)",
+    }}>
+      <div style={{ display: "flex", justifyContent: "center", color: "var(--text3)", marginBottom: 8 }}>
+        {icon}
+      </div>
+      <div style={{ fontSize: 12.5, color: "var(--text2)", marginBottom: 4, lineHeight: 1.4 }}>
+        No {label} for this section yet.
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--text3)", marginBottom: 12, lineHeight: 1.4 }}>
+        Want to see {label} here? Let us know!
+      </div>
+      <button
+        onClick={handleVote}
+        disabled={localVoted || submitting}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "8px 16px", borderRadius: 8,
+          border: localVoted ? "1px solid var(--accent-border)" : "1px solid var(--border)",
+          background: localVoted ? "var(--accent-bg)" : "var(--white)",
+          color: localVoted ? "var(--accent)" : "var(--text)",
+          fontSize: 12.5, fontWeight: 500, cursor: localVoted ? "default" : "pointer",
+          fontFamily: "'Inter', sans-serif",
+          opacity: submitting ? 0.6 : 1,
+          transition: "all 0.15s",
+        }}
+      >
+        {localVoted ? (
+          <>
+            <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Requested
+          </>
+        ) : (
+          <>
+            <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M14 9V5a3 3 0 00-6 0v4H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2v-9a2 2 0 00-2-2h-3z"/>
+            </svg>
+            Request {type === "VIDEO" ? "Videos" : "Articles"}
+          </>
+        )}
+      </button>
+      {localCount > 0 && (
+        <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8 }}>
+          {localCount} {localCount === 1 ? "person has" : "people have"} requested this
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Loading Spinner ──────────────────────────────────────────────────────────
 
 function Spinner() {
@@ -232,21 +355,36 @@ export function InsightsPanel({ section, open, onClose, width = 296 }: Props) {
   const [data, setData] = useState<InsightsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [playingVideo, setPlayingVideo] = useState<Insight | null>(null);
+  const [votes, setVotes] = useState<VoteStatus>({
+    videos: { count: 0, voted: false },
+    articles: { count: 0, voted: false },
+  });
 
   const fetchInsights = useCallback(async (sectionId: string) => {
     setLoading(true);
     setData(null);
     try {
-      const res = await fetch(`/api/insights?section=${encodeURIComponent(sectionId)}`);
-      if (!res.ok) throw new Error("Failed to fetch insights");
-      const json: InsightsData = await res.json();
-      setData(json);
+      const [insightsRes, votesRes] = await Promise.all([
+        fetch(`/api/insights?section=${encodeURIComponent(sectionId)}`),
+        fetch(`/api/insight-requests?section=${encodeURIComponent(sectionId)}`),
+      ]);
 
-      // Auto-select first tab that has content
-      if (json.guidance.length > 0) setActiveTab("guidance");
-      else if (json.videos.length > 0) setActiveTab("videos");
-      else if (json.articles.length > 0) setActiveTab("articles");
-      else setActiveTab("guidance");
+      if (insightsRes.ok) {
+        const json: InsightsData = await insightsRes.json();
+        setData(json);
+
+        // Auto-select first tab that has content
+        if (json.guidance.length > 0) setActiveTab("guidance");
+        else if (json.videos.length > 0) setActiveTab("videos");
+        else if (json.articles.length > 0) setActiveTab("articles");
+        else setActiveTab("guidance");
+      } else {
+        setData({ guidance: [], videos: [], articles: [] });
+      }
+
+      if (votesRes.ok) {
+        setVotes(await votesRes.json());
+      }
     } catch {
       setData({ guidance: [], videos: [], articles: [] });
     } finally {
@@ -259,6 +397,13 @@ export function InsightsPanel({ section, open, onClose, width = 296 }: Props) {
       fetchInsights(section.section);
     }
   }, [open, section?.section, fetchInsights]);
+
+  const handleVoted = (type: "VIDEO" | "ARTICLE", count: number) => {
+    setVotes(prev => ({
+      ...prev,
+      [type === "VIDEO" ? "videos" : "articles"]: { count, voted: true },
+    }));
+  };
 
   if (!open) return null;
 
@@ -337,21 +482,25 @@ export function InsightsPanel({ section, open, onClose, width = 296 }: Props) {
                     <VideoCard key={v.id} insight={v} onPlay={() => setPlayingVideo(v)} />
                   ))}
                 </div>
-              : totalCount > 0 && (
-                <div style={{ textAlign: "center", padding: "24px 12px", color: "var(--text3)", fontSize: 12 }}>
-                  No videos for this section.
-                </div>
-              )
+              : <RequestContentCard
+                  type="VIDEO"
+                  sectionId={section.section}
+                  voted={votes.videos.voted}
+                  count={votes.videos.count}
+                  onVoted={handleVoted}
+                />
           )}
 
           {!loading && data && activeTab === "articles" && (
             counts.articles > 0
               ? data.articles.map((a) => <ArticleCard key={a.id} insight={a} />)
-              : totalCount > 0 && (
-                <div style={{ textAlign: "center", padding: "24px 12px", color: "var(--text3)", fontSize: 12 }}>
-                  No articles for this section.
-                </div>
-              )
+              : <RequestContentCard
+                  type="ARTICLE"
+                  sectionId={section.section}
+                  voted={votes.articles.voted}
+                  count={votes.articles.count}
+                  onVoted={handleVoted}
+                />
           )}
         </div>
 
