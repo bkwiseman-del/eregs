@@ -199,12 +199,37 @@ export function AnnotationListView({ type, emptyIcon, emptyTitle, emptyDescripti
     );
   }
 
+  const impactedCount = annotations.filter(a => a.impactedByChange).length;
+
   // Annotations list grouped by section
   return (
     <div style={{
       maxWidth: 680, margin: "0 auto",
       padding: "20px 16px 80px",
     }}>
+      {/* Impact warning banner */}
+      {impactedCount > 0 && (
+        <div style={{
+          background: "#fef3c7", border: "1px solid #fde68a",
+          borderRadius: 10, padding: "12px 14px", marginBottom: 16,
+          display: "flex", alignItems: "flex-start", gap: 10,
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#92400e" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}>
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#92400e" }}>
+              Regulations have changed
+            </div>
+            <div style={{ fontSize: 12, color: "#78350f", marginTop: 2, lineHeight: 1.4 }}>
+              {impactedCount} {type.toLowerCase()}{impactedCount !== 1 ? "s" : ""} may reference text that has been updated.
+              Open each to review and dismiss the warning.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Summary */}
       <div style={{
         display: "flex", alignItems: "center", gap: 8,
@@ -221,6 +246,15 @@ export function AnnotationListView({ type, emptyIcon, emptyTitle, emptyDescripti
         <span style={{ fontSize: 13, color: "var(--text2)" }}>
           {type.toLowerCase()}{annotations.length !== 1 ? "s" : ""} across {groups.length} section{groups.length !== 1 ? "s" : ""}
         </span>
+        {impactedCount > 0 && (
+          <span style={{
+            fontSize: 11, fontWeight: 600, color: "#92400e",
+            background: "#fef3c7", border: "1px solid #fde68a",
+            padding: "2px 8px", borderRadius: 10,
+          }}>
+            {impactedCount} needs review
+          </span>
+        )}
       </div>
 
       {/* Section groups */}
@@ -269,6 +303,7 @@ export function AnnotationListView({ type, emptyIcon, emptyTitle, emptyDescripti
 
 function AnnotationCard({ annotation: a, type }: { annotation: ReaderAnnotation; type: AnnotationType }) {
   const label = paragraphLabel(a.paragraphId, a.paragraphIds);
+  const impacted = a.impactedByChange;
 
   const firstPid = a.paragraphIds?.[0] ?? a.paragraphId;
   const href = `/regs/${a.section}${firstPid ? `#${firstPid}` : ""}`;
@@ -276,24 +311,27 @@ function AnnotationCard({ annotation: a, type }: { annotation: ReaderAnnotation;
   return (
     <Link href={href} style={{ textDecoration: "none" }}>
       <div style={{
-        background: "var(--white)", border: "1px solid var(--border)",
+        background: impacted ? "#fffbeb" : "var(--white)",
+        border: impacted ? "1px solid #fde68a" : "1px solid var(--border)",
+        borderLeft: impacted ? "3px solid #f59e0b" : undefined,
         borderRadius: 10, padding: "12px 14px",
         cursor: "pointer", transition: "all 0.15s",
         display: "flex", gap: 12, alignItems: "flex-start",
       }}
         onMouseEnter={e => {
-          (e.currentTarget as HTMLElement).style.borderColor = "var(--border2)";
+          (e.currentTarget as HTMLElement).style.borderColor = impacted ? "#f59e0b" : "var(--border2)";
           (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
         }}
         onMouseLeave={e => {
-          (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+          (e.currentTarget as HTMLElement).style.borderColor = impacted ? "#fde68a" : "var(--border)";
           (e.currentTarget as HTMLElement).style.boxShadow = "none";
         }}
       >
         {/* Type indicator */}
         <div style={{
           width: 6, height: 6, borderRadius: "50%", flexShrink: 0, marginTop: 7,
-          background: type === "NOTE" ? "var(--blue)"
+          background: impacted ? "#f59e0b"
+            : type === "NOTE" ? "var(--blue)"
             : type === "HIGHLIGHT" ? "#c8a800"
             : "var(--accent)",
         }} />
@@ -391,10 +429,26 @@ function AnnotationCard({ annotation: a, type }: { annotation: ReaderAnnotation;
             </>
           )}
 
-          {/* Timestamp */}
-          <span style={{ fontSize: 11, color: "var(--text3)" }}>
-            {formatTimeAgo(a.updatedAt ?? a.createdAt)}
-          </span>
+          {/* Timestamp + impact badge */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 11, color: "var(--text3)" }}>
+              {formatTimeAgo(a.updatedAt ?? a.createdAt)}
+            </span>
+            {impacted && (
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 3,
+                fontSize: 10, fontWeight: 600, color: "#92400e",
+                background: "#fef3c7", border: "1px solid #fde68a",
+                padding: "1px 7px", borderRadius: 4,
+              }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                Regulation changed
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Arrow */}

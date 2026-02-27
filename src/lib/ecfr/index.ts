@@ -696,7 +696,7 @@ async function flagImpactedAnnotations(section: string) {
 
 // ── XML PARSING ──────────────────────────────────────────────────────────────
 
-function parseXml(xml: string, part: string, section: string): EcfrSection | null {
+export function parseXml(xml: string, part: string, section: string): EcfrSection | null {
   try {
     // Appendixes may use DIV9 instead of DIV8
     const isAppendix = isAppendixSection(section);

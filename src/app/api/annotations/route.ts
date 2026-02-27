@@ -215,6 +215,7 @@ export async function DELETE(request: NextRequest) {
 
 // PATCH /api/annotations
 // Body: { id, note/text }  — notes only
+// Body: { id, dismissImpact: true }  — dismiss impact warning on any annotation type
 export async function PATCH(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) {
@@ -226,9 +227,31 @@ export async function PATCH(request: NextRequest) {
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const body = await request.json();
-    const { id, note, text } = body;
+    const { id, note, text, dismissImpact } = body;
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
+    // Dismiss impact warning — works on highlights, notes, and bookmarks
+    if (dismissImpact) {
+      // Try each annotation type
+      const hl = await db.highlight.findUnique({ where: { id } });
+      if (hl && hl.userId === user.id) {
+        await db.highlight.update({ where: { id }, data: { impactedByChange: false } });
+        return NextResponse.json({ ok: true });
+      }
+      const n = await db.note.findUnique({ where: { id } });
+      if (n && n.userId === user.id) {
+        await db.note.update({ where: { id }, data: { impactedByChange: false } });
+        return NextResponse.json({ ok: true });
+      }
+      const bm = await db.bookmark.findUnique({ where: { id } });
+      if (bm && bm.userId === user.id) {
+        await db.bookmark.update({ where: { id }, data: { impactedByChange: false } });
+        return NextResponse.json({ ok: true });
+      }
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Note text update
     const existing = await db.note.findUnique({ where: { id } });
     if (!existing || existing.userId !== user.id) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

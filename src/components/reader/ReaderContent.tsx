@@ -1,8 +1,10 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import type { EcfrSection, EcfrNode } from "@/lib/ecfr";
 import type { ReaderAnnotation } from "@/lib/annotations";
 import { makeParagraphId } from "@/lib/annotations";
+import { VersionHistoryPanel } from "./VersionHistoryPanel";
 
 interface Props {
   section: EcfrSection;
@@ -12,24 +14,40 @@ interface Props {
   selectedPids: Set<string>;
   onTogglePara: (pid: string) => void;
   onEditNote: (annotation: ReaderAnnotation) => void;
+  historicalDate?: string | null;
+  historicalLoading?: boolean;
+  onSelectHistoricalDate?: (date: string | null) => void;
+  isPro?: boolean;
+  impactedAnnotationCount?: number;
+  onDismissImpact?: () => void;
 }
 
 function NoteBubble({ annotation, onEdit }: { annotation: ReaderAnnotation; onEdit: () => void }) {
+  const impacted = annotation.impactedByChange;
   return (
     <div
       onClick={(e) => { e.stopPropagation(); onEdit(); }}
       style={{
         margin: "4px -10px 6px",
-        background: "var(--note-bg)",
-        border: "1px solid var(--note-border)",
-        borderLeft: "3px solid var(--blue)",
+        background: impacted ? "#fef3c7" : "var(--note-bg)",
+        border: impacted ? "1px solid #f59e0b" : "1px solid var(--note-border)",
+        borderLeft: impacted ? "3px solid #f59e0b" : "3px solid var(--blue)",
         borderRadius: 7,
         padding: "10px 13px",
-        fontSize: 13, color: "var(--blue)", lineHeight: 1.55,
+        fontSize: 13, color: impacted ? "#92400e" : "var(--blue)", lineHeight: 1.55,
         cursor: "pointer",
         transition: "all 0.15s",
       }}
     >
+      {impacted && (
+        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#92400e", marginBottom: 4 }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          Regulation text may have changed
+        </div>
+      )}
       <div>"{annotation.note}"</div>
       <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>
         {new Date(annotation.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -150,6 +168,7 @@ function RenderNode({
     a => a.type === "NOTE" && (a.paragraphIds?.includes(pid) || a.paragraphId === pid)
   );
   const isHighlighted = !!highlight;
+  const highlightImpacted = highlight?.impactedByChange;
   const hasNote = !!noteAnnotation;
   // Note bubble renders only after the last paragraph in the selection
   const isLastNoteParagraph = noteAnnotation && noteAnnotation.paragraphId === pid;
@@ -208,12 +227,24 @@ function RenderNode({
           {node.text}
         </span>
 
+        {/* Impact warning icon on highlighted paragraphs */}
+        {highlightImpacted && !hasNote && (
+          <span title="Regulation text may have changed since this highlight was created" style={{
+            position: "absolute", right: 9, top: 9,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5">
+              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </span>
+        )}
+
         {/* Note indicator dot */}
         {hasNote && (
           <span style={{
             position: "absolute", right: 9, top: 11,
             width: 7, height: 7, borderRadius: "50%",
-            background: "var(--blue)",
+            background: noteAnnotation?.impactedByChange ? "#f59e0b" : "var(--blue)",
             boxShadow: "0 0 0 2px white",
           }} />
         )}
@@ -230,7 +261,14 @@ function RenderNode({
 export function ReaderContent({
   section, adjacent, onNavigate, annotations,
   selectedPids, onTogglePara, onEditNote,
+  historicalDate, historicalLoading, onSelectHistoricalDate, isPro,
+  impactedAnnotationCount, onDismissImpact,
 }: Props) {
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Close panel on section change
+  useEffect(() => { setHistoryOpen(false); }, [section.section]);
+
   const navClick = (sectionId: string) => (e: React.MouseEvent) => {
     if (onNavigate) {
       e.preventDefault();
@@ -249,27 +287,161 @@ export function ReaderContent({
         }
       }}
     >
+      {/* Pulsing dot animation */}
+      <style>{`
+        @keyframes pulse-green {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+          50% { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+        }
+        @keyframes pulse-amber {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+          50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0); }
+        }
+      `}</style>
+
       {/* Status bar */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "12px 0", borderBottom: "1px solid var(--border)", marginBottom: 32,
       }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text3)" }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--green)", display: "inline-block" }} />
-          Viewing current version
-        </span>
-        <a
-          href={`https://www.ecfr.gov/current/title-49/section-${section.section}`}
-          target="_blank" rel="noopener noreferrer"
-          style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text3)", textDecoration: "none" }}
-        >
-          eCFR
-          <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-            <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-          </svg>
-        </a>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text3)" }}>
+          {historicalDate ? (
+            <>
+              <span style={{
+                width: 7, height: 7, borderRadius: "50%", background: "#f59e0b",
+                display: "inline-block", flexShrink: 0,
+                animation: "pulse-amber 2s ease-in-out infinite",
+              }} />
+              <span>
+                {historicalLoading ? "Loading historical version…" : (
+                  <>
+                    Viewing as of{" "}
+                    <span style={{ fontWeight: 600, color: "#92400e" }}>
+                      {new Date(historicalDate + "T12:00:00").toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                    </span>
+                  </>
+                )}
+              </span>
+              <span style={{ color: "var(--border2)", margin: "0 2px" }}>·</span>
+              <button
+                onClick={() => onSelectHistoricalDate?.(null)}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  fontSize: 12, color: "var(--accent)", fontWeight: 600,
+                  padding: 0, fontFamily: "'Inter', sans-serif",
+                }}
+              >
+                View current
+              </button>
+            </>
+          ) : (
+            <>
+              <span style={{
+                width: 7, height: 7, borderRadius: "50%", background: "var(--green)",
+                display: "inline-block", flexShrink: 0,
+                animation: "pulse-green 2s ease-in-out infinite",
+              }} />
+              Viewing current regulations
+            </>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* History button (Pro only) */}
+          {onSelectHistoricalDate ? (
+            <button
+              onClick={() => setHistoryOpen(v => !v)}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                fontSize: 12, color: historyOpen ? "var(--accent)" : "var(--text3)",
+                background: "none", border: "none", cursor: "pointer",
+                padding: "2px 6px", borderRadius: 5,
+                fontFamily: "'Inter', sans-serif",
+              }}
+            >
+              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              History
+            </button>
+          ) : (
+            <span
+              title="Version history is a Pro feature"
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                fontSize: 12, color: "var(--text3)", opacity: 0.5,
+                cursor: "default",
+              }}
+            >
+              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0110 0v4" />
+              </svg>
+            </span>
+          )}
+
+          <a
+            href={`https://www.ecfr.gov/current/title-49/section-${section.section}`}
+            target="_blank" rel="noopener noreferrer"
+            style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text3)", textDecoration: "none" }}
+          >
+            eCFR
+            <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+              <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+          </a>
+        </div>
       </div>
+
+      {/* Version History Panel */}
+      {historyOpen && onSelectHistoricalDate && (
+        <VersionHistoryPanel
+          section={section.section}
+          historicalDate={historicalDate}
+          onSelectDate={(date) => {
+            onSelectHistoricalDate(date);
+            setHistoryOpen(false);
+          }}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
+
+      {/* Annotation Impact Warning Banner */}
+      {!historicalDate && impactedAnnotationCount && impactedAnnotationCount > 0 ? (
+        <div style={{
+          background: "#fef3c7", border: "1px solid #fde68a",
+          borderRadius: 8, padding: "10px 14px", marginBottom: 20,
+          display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#92400e" strokeWidth="2" style={{ flexShrink: 0 }}>
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span style={{ flex: 1, fontSize: 12, color: "#92400e", lineHeight: 1.4 }}>
+            Regulations in this section have changed since you made {impactedAnnotationCount === 1 ? "an annotation" : `${impactedAnnotationCount} annotations`}. Some highlights or notes may reference changed text.
+          </span>
+          {onDismissImpact && (
+            <button
+              onClick={onDismissImpact}
+              style={{
+                padding: "4px 10px", borderRadius: 5,
+                background: "rgba(146, 64, 14, 0.1)", border: "1px solid rgba(146, 64, 14, 0.2)",
+                fontSize: 11, fontWeight: 600, color: "#92400e", cursor: "pointer",
+                whiteSpace: "nowrap", flexShrink: 0,
+                fontFamily: "'Inter', sans-serif",
+              }}
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
+      ) : null}
 
       {/* Section header */}
       <div style={{ marginBottom: 28 }}>

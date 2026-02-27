@@ -304,6 +304,59 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     return map;
   }, [storeRevision]);
 
+  // ── HISTORICAL VERSION BROWSING (Pro) ───────────────────────────────────
+
+  const [historicalDate, setHistoricalDate] = useState<string | null>(null);
+  const [historicalSection, setHistoricalSection] = useState<EcfrSection | null>(null);
+  const [historicalLoading, setHistoricalLoading] = useState(false);
+
+  // Fetch historical version when date changes
+  useEffect(() => {
+    if (!historicalDate) {
+      setHistoricalSection(null);
+      return;
+    }
+    let cancelled = false;
+    setHistoricalLoading(true);
+    fetch(`/api/historical-section?section=${currentSectionId}&date=${historicalDate}`)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        if (!cancelled) {
+          setHistoricalSection({
+            part: data.part,
+            section: data.section,
+            title: data.title,
+            content: data.content,
+            subpartLabel: data.subpartLabel,
+            subpartTitle: data.subpartTitle,
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          showToast("Could not load regulations for that date");
+          setHistoricalDate(null);
+          setHistoricalSection(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setHistoricalLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [historicalDate, currentSectionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear historical mode on navigation
+  useEffect(() => {
+    setHistoricalDate(null);
+    setHistoricalSection(null);
+  }, [currentSectionId]);
+
+  // The section to display: historical if viewing past date, otherwise current
+  const displaySection = historicalDate && historicalSection ? historicalSection : currentSection;
+
   // ── ANNOTATIONS ─────────────────────────────────────────────────────────
 
   const [annotations, setAnnotations] = useState<ReaderAnnotation[]>([]);
@@ -633,6 +686,30 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     }).join(" | ");
   }, [selectedPids, editingNote, currentSection, currentSectionId]);
 
+  // Count impacted annotations in current section
+  const impactedCount = useMemo(() => {
+    return annotations.filter(a => a.impactedByChange).length;
+  }, [annotations]);
+
+  // Dismiss impact warnings for current section
+  const handleDismissImpact = useCallback(async () => {
+    const impacted = annotations.filter(a => a.impactedByChange);
+    // Optimistic: clear locally
+    setAnnotations(prev => prev.map(a =>
+      a.impactedByChange ? { ...a, impactedByChange: false } : a
+    ));
+    showToast("Warnings dismissed");
+    // Persist to server for each annotation
+    for (const a of impacted) {
+      if (a.id.startsWith("local-")) continue;
+      fetch("/api/annotations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: a.id, dismissImpact: true }),
+      }).catch(() => {});
+    }
+  }, [annotations, showToast]);
+
   const handleMainClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (!target.closest("[data-para]") &&
@@ -730,13 +807,19 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         <main ref={mainRef} style={{ flex: 1, overflowY: "auto", minWidth: 0, background: "var(--bg)" }}>
           {!isPaid && <ProBanner />}
           <ReaderContent
-            section={currentSection}
-            adjacent={adjacent}
+            section={displaySection}
+            adjacent={historicalDate ? { prev: null, next: null } : adjacent}
             onNavigate={navigateTo}
-            annotations={annotations}
-            selectedPids={selectedPids}
+            annotations={historicalDate ? [] : annotations}
+            selectedPids={historicalDate ? new Set() : selectedPids}
             onTogglePara={togglePara}
             onEditNote={handleEditNote}
+            historicalDate={historicalDate}
+            historicalLoading={historicalLoading}
+            onSelectHistoricalDate={isPaid ? setHistoricalDate : undefined}
+            isPro={isPaid}
+            impactedAnnotationCount={impactedCount}
+            onDismissImpact={handleDismissImpact}
           />
         </main>
 
