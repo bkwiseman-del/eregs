@@ -7,6 +7,7 @@ A digital platform that modernizes Federal Motor Carrier Safety Regulations (FMC
 - **Regulation Reader** — Browse all FMCSR Parts (40–399) with structured, navigable content parsed from the eCFR XML API
 - **Annotations** — Tap paragraphs to highlight, add notes, or copy text with CFR citations. Local-first (works without auth, persists with auth).
 - **Insights Panel** — Contextual FMCSA guidance, Trucksafe videos, and articles alongside regulation text
+- **Pro Dashboard** — Content feed (YouTube videos, podcast episodes, blog articles) from Trucksafe, with inline video modal, inline podcast player, and activity sidebar showing recent annotations
 - **Appendixes** — Full support for regulatory appendixes (e.g., Appendix A to Part 385)
 - **Version History** — Track regulatory changes with Federal Register citations
 - **Responsive** — Desktop layout with resizable/collapsible sidebars; mobile layout with bottom tabs and drawer navigation
@@ -28,20 +29,27 @@ src/
 │   ├── api/
 │   │   ├── reader-data/    # Serves cached TOC + sections to the client
 │   │   ├── annotations/    # CRUD for highlights and notes
+│   │   ├── dashboard/      # Feed + activity APIs for Pro dashboard
 │   │   ├── cron/sync-regs/ # Cron endpoint to sync eCFR data
+│   │   ├── cron/sync-feed/ # Cron endpoint to sync YouTube/podcast/article feed
 │   │   └── ecfr-image/     # Proxy for eCFR regulation images
 │   ├── (auth)/             # Login / verify pages
-│   └── (dashboard)/        # Dashboard (post-auth)
+│   └── (dashboard)/        # Pro dashboard (content feed + activity sidebar)
 ├── components/reader/
 │   ├── ReaderShell.tsx      # Main orchestrator: state, navigation, annotations
 │   ├── ReaderContent.tsx    # Renders paragraphs, tables, images with annotation state
 │   ├── ReaderSidebar.tsx    # TOC sidebar (all FMCSR parts, expandable subparts)
 │   ├── InsightsPanel.tsx    # Guidance, videos, articles panel
 │   ├── ActionBar.tsx        # Selection actions: highlight, note, copy (inline note editor)
-│   ├── TopNav.tsx           # Navigation bar with search, TOC toggle, insights toggle
+│   ├── TopNav.tsx           # Navigation bar (wraps shared AppNav with insights/bookmark)
 │   ├── NavRail.tsx          # Left icon rail (desktop)
 │   ├── ResizeHandle.tsx     # Draggable panel border for resizing sidebars
 │   └── Toast.tsx            # Feedback notifications
+├── components/dashboard/
+│   └── DashboardShell.tsx   # Feed cards, video modal, podcast player, activity sidebar
+├── components/shared/
+│   ├── AppNav.tsx           # Shared top nav (logo, search, avatar) used across all pages
+│   └── MobileBottomTabs.tsx # Mobile bottom tab bar
 ├── lib/
 │   ├── ecfr/index.ts        # eCFR API client, XML parser, caching, sync logic
 │   ├── annotations.ts       # Annotation types and paragraph ID helpers
@@ -49,6 +57,7 @@ src/
 │   └── db/                  # Prisma client
 scripts/
 ├── sync-local.ts            # Local dev: sync all regulation data
+├── sync-feed.ts             # Sync YouTube playlist, podcast RSS, and blog articles into FeedItem table
 ├── sync-all.sh              # Batch sync script
 └── sync-images.ts           # Sync regulation images
 ```
@@ -70,6 +79,8 @@ cp .env.example .env
 #   TWILIO_ACCOUNT_SID     — For SMS auth
 #   TWILIO_AUTH_TOKEN
 #   TWILIO_PHONE_NUMBER
+#   YOUTUBE_API_KEY         — For syncing YouTube playlist feed
+#   CRON_SECRET             — Bearer token for cron endpoints
 
 # Database
 npx prisma migrate deploy
@@ -77,6 +88,9 @@ npx prisma generate
 
 # Sync regulation data (first run — fetches all FMCSR parts from eCFR)
 npx tsx scripts/sync-local.ts
+
+# Sync dashboard content feed (YouTube, podcast, articles)
+npx tsx scripts/sync-feed.ts
 
 # Run
 npm run dev
