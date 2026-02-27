@@ -4,11 +4,8 @@ import { auth, canAccessPro } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   const session = await auth();
-  if (!session?.user?.email) {
+  if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!canAccessPro(session)) {
-    return NextResponse.json({ error: "Pro subscription required" }, { status: 403 });
   }
 
   const type = request.nextUrl.searchParams.get("type"); // VIDEO, PODCAST, ARTICLE

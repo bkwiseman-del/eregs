@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useRouter, usePathname } from "next/navigation";
 import type { PartToc } from "@/lib/ecfr";
 import { NavRail } from "@/components/reader/NavRail";
 import { ReaderSidebar } from "@/components/reader/ReaderSidebar";
@@ -22,6 +23,12 @@ function useIsMobile() {
   return mobile;
 }
 
+const libraryTabs = [
+  { label: "Notes", href: "/notes" },
+  { label: "Highlights", href: "/highlights" },
+  { label: "Saved", href: "/saved" },
+];
+
 export function AnnotationPageLayout({
   children,
   isPaid = false,
@@ -31,6 +38,7 @@ export function AnnotationPageLayout({
 }) {
   const isMobile = useIsMobile();
   const router = useRouter();
+  const pathname = usePathname();
   const [tocCollapsed, setTocCollapsed] = useState(false);
   const [tocWidth, setTocWidth] = useState(TOC_DEFAULT);
   const [allTocs, setAllTocs] = useState<Map<string, PartToc>>(new Map());
@@ -167,6 +175,28 @@ export function AnnotationPageLayout({
           flex: 1, overflowY: "auto", minWidth: 0, background: "var(--bg)",
           WebkitOverflowScrolling: "touch",
         }}>
+          {/* Mobile library sub-tabs */}
+          {isMobile && (
+            <div style={{
+              display: "flex", borderBottom: "1px solid var(--border)",
+              background: "var(--white)", position: "sticky", top: 0, zIndex: 10,
+            }}>
+              {libraryTabs.map(tab => {
+                const active = pathname === tab.href;
+                return (
+                  <Link key={tab.href} href={tab.href} style={{
+                    flex: 1, textAlign: "center", padding: "10px 0",
+                    fontSize: 13, fontWeight: 600, textDecoration: "none",
+                    color: active ? "var(--accent)" : "var(--text3)",
+                    borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
+                    transition: "color 0.15s, border-color 0.15s",
+                  }}>
+                    {tab.label}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
           {children}
         </main>
       </div>

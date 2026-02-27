@@ -3,6 +3,18 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { NavRail } from "@/components/reader/NavRail";
 import { AppNav } from "@/components/shared/AppNav";
+import { MobileBottomTabs } from "@/components/shared/MobileBottomTabs";
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setMobile(window.innerWidth < 900);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  return mobile;
+}
 
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -523,6 +535,7 @@ const filters: { label: string; value: FilterType; icon?: React.ReactNode }[] = 
 // ── Main Shell ───────────────────────────────────────────────────────────────
 
 export function DashboardShell({ userName }: { userName: string }) {
+  const isMobile = useIsMobile();
   const [filter, setFilter] = useState<FilterType>("all");
   const [items, setItems] = useState<FeedItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -573,11 +586,11 @@ export function DashboardShell({ userName }: { userName: string }) {
 
   return (
     <>
-      <AppNav />
+      <AppNav isMobile={isMobile} />
 
       <div style={{ display: "flex", height: "100vh", paddingTop: "var(--nav-h)", overflow: "hidden" }}>
-      {/* NavRail */}
-      <NavRail isPaid />
+      {/* NavRail — desktop only */}
+      {!isMobile && <NavRail isPaid />}
 
       {/* Main Feed */}
       <main style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
@@ -712,6 +725,9 @@ export function DashboardShell({ userName }: { userName: string }) {
         }
       `}</style>
     </div>
+
+    {/* Mobile bottom tabs */}
+    {isMobile && <MobileBottomTabs isPaid />}
     </>
   );
 }
