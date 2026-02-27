@@ -84,11 +84,13 @@ const pageConfig = {
 
 export function AnnotationPage({ pageType }: { pageType: PageType }) {
   const config = pageConfig[pageType];
-  const { status } = useSession();
+  const { data: sessionData, status } = useSession();
   const isPaid = status === "authenticated";
+  const userRole = (sessionData?.user as any)?.role as string | undefined;
+  const isFleet = ["FLEET_MANAGER", "ENTERPRISE_ADMIN", "ENTERPRISE_MANAGER", "INTERNAL"].includes(userRole ?? "");
 
   return (
-    <AnnotationPageLayout isPaid={isPaid}>
+    <AnnotationPageLayout isPaid={isPaid} isFleet={isFleet}>
       {status === "loading" ? (
         <div style={{ padding: "80px 20px", textAlign: "center" }}>
           <div style={{

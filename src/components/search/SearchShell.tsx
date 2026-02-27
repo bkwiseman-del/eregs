@@ -120,7 +120,7 @@ interface SearchCache {
 
 let searchCache: SearchCache | null = null;
 
-export function SearchShell({ isPaid, userName }: { isPaid: boolean; userName: string | null }) {
+export function SearchShell({ isPaid, isFleet = false, userName }: { isPaid: boolean; isFleet?: boolean; userName: string | null }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isMobile = useIsMobile();
@@ -345,7 +345,7 @@ export function SearchShell({ isPaid, userName }: { isPaid: boolean; userName: s
           overflow: "hidden",
         }}
       >
-        {!isMobile && <NavRail isPaid={isPaid} />}
+        {!isMobile && <NavRail isPaid={isPaid} isFleet={isFleet} />}
 
         <main
           style={{

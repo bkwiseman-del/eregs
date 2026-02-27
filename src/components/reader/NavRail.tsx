@@ -43,7 +43,7 @@ const navItems: NavItem[] = [
   },
 ];
 
-export function NavRail({ isPaid = false, currentSection }: { isPaid?: boolean; currentSection?: string }) {
+export function NavRail({ isPaid = false, isFleet = false, currentSection }: { isPaid?: boolean; isFleet?: boolean; currentSection?: string }) {
   const pathname = usePathname();
   const isRegs = pathname.startsWith("/regs");
 
@@ -96,7 +96,7 @@ export function NavRail({ isPaid = false, currentSection }: { isPaid?: boolean; 
         );
       })}
 
-      {isPaid && (
+      {isFleet && (
         <>
           <div style={{ width: 28, height: 1, background: "var(--border)", margin: "4px 0" }} />
 

@@ -550,7 +550,7 @@ const filters: { label: string; value: FilterType; icon?: React.ReactNode }[] = 
 
 // ── Main Shell ───────────────────────────────────────────────────────────────
 
-export function DashboardShell({ userName }: { userName: string }) {
+export function DashboardShell({ userName, isFleet = false }: { userName: string; isFleet?: boolean }) {
   const isMobile = useIsMobile();
   const [filter, setFilter] = useState<FilterType>("all");
   const [items, setItems] = useState<FeedItem[]>([]);
@@ -642,7 +642,7 @@ export function DashboardShell({ userName }: { userName: string }) {
 
       <div style={{ display: "flex", height: "100vh", paddingTop: "var(--nav-h)", overflow: "hidden" }}>
       {/* NavRail — desktop only */}
-      {!isMobile && <NavRail isPaid />}
+      {!isMobile && <NavRail isPaid isFleet={isFleet} />}
 
       {/* Main Feed */}
       <main style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>

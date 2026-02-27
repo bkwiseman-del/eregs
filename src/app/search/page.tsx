@@ -1,11 +1,12 @@
-import { auth, canAccessPro } from "@/lib/auth";
+import { auth, canAccessPro, canAccessFleet } from "@/lib/auth";
 import { SearchShell } from "@/components/search/SearchShell";
 
 export default async function SearchPage() {
   const session = await auth();
   const isPaid = session ? canAccessPro(session) : false;
+  const isFleet = session ? canAccessFleet(session) : false;
 
-  return <SearchShell isPaid={isPaid} userName={session?.user?.name ?? null} />;
+  return <SearchShell isPaid={isPaid} isFleet={isFleet} userName={session?.user?.name ?? null} />;
 }
 
 export function generateMetadata() {

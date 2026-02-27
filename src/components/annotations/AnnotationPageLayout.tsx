@@ -33,9 +33,11 @@ const libraryTabs = [
 export function AnnotationPageLayout({
   children,
   isPaid = false,
+  isFleet = false,
 }: {
   children: React.ReactNode;
   isPaid?: boolean;
+  isFleet?: boolean;
 }) {
   const isMobile = useIsMobile();
   const router = useRouter();
@@ -131,7 +133,7 @@ export function AnnotationPageLayout({
         position: "fixed", top: "var(--nav-h)", bottom: 0, left: 0, right: 0,
         display: "flex", overflow: "hidden",
       }}>
-        {!isMobile && <NavRail isPaid={isPaid} />}
+        {!isMobile && <NavRail isPaid={isPaid} isFleet={isFleet} />}
 
         {/* Desktop TOC sidebar with resize handle */}
         {!isMobile && !tocCollapsed && (

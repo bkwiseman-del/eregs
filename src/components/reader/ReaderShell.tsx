@@ -385,8 +385,10 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   const [toastMsg, setToastMsg] = useState("");
   const [toastKey, setToastKey] = useState(0);
   const localIdCounter = useRef(0);
-  const { status: sessionStatus } = useSession();
+  const { data: sessionData, status: sessionStatus } = useSession();
   const isPaid = sessionStatus === "authenticated";
+  const userRole = (sessionData?.user as any)?.role as string | undefined;
+  const isFleet = ["FLEET_MANAGER", "ENTERPRISE_ADMIN", "ENTERPRISE_MANAGER", "INTERNAL"].includes(userRole ?? "");
   const [isAuthed, setIsAuthed] = useState<boolean | null>(null); // null = unknown yet
 
   const showToast = useCallback((msg: string) => {
@@ -783,7 +785,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         top: "var(--nav-h)", bottom: isMobile ? 54 : 0, left: 0, right: 0,
         display: "flex", overflow: "hidden"
       }}>
-        {!isMobile && <NavRail isPaid={isPaid} currentSection={currentSectionId} />}
+        {!isMobile && <NavRail isPaid={isPaid} isFleet={isFleet} currentSection={currentSectionId} />}
 
         {/* Desktop TOC with resize handle */}
         {!isMobile && !tocCollapsed && (
