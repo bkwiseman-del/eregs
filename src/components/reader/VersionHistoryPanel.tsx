@@ -100,6 +100,15 @@ export function VersionHistoryPanel({ section, historicalDate, onSelectDate, onC
         </button>
       </div>
 
+      {/* Explainer */}
+      {!loading && timeline.length > 0 && (
+        <p style={{ fontSize: 12, color: "var(--text3)", lineHeight: 1.5, margin: "0 0 12px" }}>
+          View this section as it existed on the dates below. Historical versions go back to{" "}
+          {new Date(timeline[timeline.length - 1].date + "T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}{" "}
+          in eCFR. Red dots indicate substantive changes to the regulation text.
+        </p>
+      )}
+
       {/* Timeline */}
       <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
         {loading ? (
