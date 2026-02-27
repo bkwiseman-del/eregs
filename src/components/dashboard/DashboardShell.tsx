@@ -760,7 +760,7 @@ export function DashboardShell({ userName, isFleet = false }: { userName: string
       {!sidebarCollapsed && (
         <aside className="dashboard-right-sidebar" style={{
           width: sidebarWidth, flexShrink: 0, background: "var(--white)",
-          borderLeft: "1px solid var(--border)", overflowY: "auto",
+          overflowY: "auto",
           display: "flex", flexDirection: "column",
         }}>
           {/* Greeting */}
