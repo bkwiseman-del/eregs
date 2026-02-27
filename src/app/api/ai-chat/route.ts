@@ -7,8 +7,22 @@ import { streamText } from "ai";
 export const maxDuration = 30;
 
 const DAILY_LIMIT = 20;
-const TOP_K = 12;
+const TOP_K = 14;
 const EMBEDDING_MODEL = "text-embedding-3-small";
+
+const STOP_WORDS = new Set([
+  "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+  "have", "has", "had", "do", "does", "did", "will", "would", "could",
+  "should", "may", "might", "shall", "can", "need", "must", "ought",
+  "i", "me", "my", "we", "our", "you", "your", "he", "she", "it",
+  "they", "them", "their", "this", "that", "these", "those", "what",
+  "which", "who", "whom", "how", "when", "where", "why",
+  "and", "or", "but", "nor", "not", "so", "yet", "both", "either",
+  "in", "on", "at", "to", "for", "of", "with", "by", "from", "about",
+  "into", "through", "during", "before", "after", "above", "below",
+  "between", "under", "over", "if", "then", "than", "too", "very",
+  "just", "also", "more", "most", "some", "any", "all", "each",
+]);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,11 +65,12 @@ interface EmbeddingRow {
 }
 
 // ── In-memory embedding cache ────────────────────────────────────────────────
-// Avoids re-loading 2400+ rows of JSON vectors from the database on every request.
+// Stores rows + vectors + lowercased chunkText for keyword search.
 
 interface EmbeddingCache {
   rows: EmbeddingRow[];
   vectors: number[][];
+  textLower: string[]; // lowercased chunkText for keyword search
   loadedAt: number;
 }
 
@@ -79,10 +94,12 @@ async function getCachedEmbeddings(): Promise<EmbeddingCache> {
 
   const rows: EmbeddingRow[] = [];
   const vectors: number[][] = [];
+  const textLower: string[] = [];
 
   for (const row of rawRows) {
     if (!row.embeddingJson) continue;
     vectors.push(JSON.parse(row.embeddingJson));
+    textLower.push((row.title + " " + row.chunkText).toLowerCase());
     rows.push({
       id: row.id,
       sourceType: row.sourceType,
@@ -94,58 +111,161 @@ async function getCachedEmbeddings(): Promise<EmbeddingCache> {
     });
   }
 
-  embeddingCache = { rows, vectors, loadedAt: Date.now() };
+  embeddingCache = { rows, vectors, textLower, loadedAt: Date.now() };
   return embeddingCache;
 }
 
-async function findRelevantChunks(questionEmbedding: number[], topK: number) {
-  // Check if pgvector is available
-  let hasPgVector = false;
-  try {
-    const ext = await db.$queryRawUnsafe<{ exists: boolean }[]>(
-      `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') AS exists`
-    );
-    hasPgVector = ext[0]?.exists ?? false;
-  } catch {
-    /* ignore */
-  }
+// ── Topic expansion: map abbreviations/topics to full terms + relevant parts ──
 
-  if (hasPgVector) {
-    const vectorStr = `[${questionEmbedding.join(",")}]`;
-    return db.$queryRawUnsafe<(EmbeddingRow & { similarity: number })[]>(
-      `SELECT id, "sourceType", "sourceId", section, part, title, "chunkText",
-              1 - (embedding <=> $1::vector) AS similarity
-       FROM "Embedding"
-       WHERE embedding IS NOT NULL
-       ORDER BY embedding <=> $1::vector
-       LIMIT ${topK}`,
-      vectorStr
-    );
-  }
+interface TopicExpansion {
+  terms: string[];
+  parts: string[];
+}
 
-  // Fallback: use in-memory cache for fast similarity search
-  const cache = await getCachedEmbeddings();
-  const topResults: (EmbeddingRow & { similarity: number })[] = [];
-  let minTopScore = -1;
+const TOPIC_MAP: Record<string, TopicExpansion> = {
+  hos: { terms: ["hours of service", "driving time", "on-duty", "off-duty", "sleeper berth"], parts: ["395"] },
+  "hours of service": { terms: ["driving time", "on-duty", "off-duty", "sleeper berth", "hours"], parts: ["395"] },
+  "driving time": { terms: ["hours of service", "on-duty", "driving"], parts: ["395"] },
+  eld: { terms: ["electronic logging device", "hours of service", "recording device"], parts: ["395"] },
+  drug: { terms: ["controlled substances", "drug testing", "alcohol testing"], parts: ["382", "40"] },
+  alcohol: { terms: ["controlled substances", "drug testing", "alcohol testing"], parts: ["382", "40"] },
+  qualification: { terms: ["driver qualification", "physical qualification", "medical examiner"], parts: ["391"] },
+  dq: { terms: ["driver qualification", "physical qualification"], parts: ["391"] },
+  cdl: { terms: ["commercial driver license", "knowledge test", "skills test"], parts: ["383"] },
+  hazmat: { terms: ["hazardous materials", "placarding", "hazmat"], parts: ["397"] },
+  insurance: { terms: ["financial responsibility", "surety bond", "insurance"], parts: ["387"] },
+  inspection: { terms: ["vehicle inspection", "parts and accessories", "maintenance"], parts: ["393", "396"] },
+  maintenance: { terms: ["vehicle inspection", "parts and accessories", "systematic inspection"], parts: ["396"] },
+  brakes: { terms: ["brake", "stopping distance", "parking brake"], parts: ["393"] },
+  passenger: { terms: ["passenger carrier", "passenger carrying", "for-hire"], parts: ["390", "395", "387"] },
+  "short haul": { terms: ["short-haul", "150 air-mile", "air-mile radius"], parts: ["395"] },
+};
 
-  for (let i = 0; i < cache.rows.length; i++) {
-    const sim = cosineSimilarity(questionEmbedding, cache.vectors[i]);
+function expandQuery(question: string): { keywords: string[]; boostParts: string[] } {
+  const qLower = question.toLowerCase();
+  const baseKeywords = qLower
+    .replace(/[^a-z0-9\s-]/g, "")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
 
-    if (topResults.length < topK) {
-      topResults.push({ ...cache.rows[i], similarity: sim });
-      if (topResults.length === topK) {
-        topResults.sort((a, b) => b.similarity - a.similarity);
-        minTopScore = topResults[topK - 1].similarity;
-      }
-    } else if (sim > minTopScore) {
-      topResults[topK - 1] = { ...cache.rows[i], similarity: sim };
-      topResults.sort((a, b) => b.similarity - a.similarity);
-      minTopScore = topResults[topK - 1].similarity;
+  const expandedTerms = new Set(baseKeywords);
+  const boostParts = new Set<string>();
+
+  // Check for topic matches in the full question text
+  for (const [topic, expansion] of Object.entries(TOPIC_MAP)) {
+    if (qLower.includes(topic)) {
+      for (const term of expansion.terms) expandedTerms.add(term);
+      for (const part of expansion.parts) boostParts.add(part);
     }
   }
 
-  topResults.sort((a, b) => b.similarity - a.similarity);
-  return topResults;
+  // Also check individual keywords
+  for (const kw of baseKeywords) {
+    const expansion = TOPIC_MAP[kw];
+    if (expansion) {
+      for (const term of expansion.terms) expandedTerms.add(term);
+      for (const part of expansion.parts) boostParts.add(part);
+    }
+  }
+
+  return { keywords: [...expandedTerms], boostParts: [...boostParts] };
+}
+
+// ── Hybrid retrieval: vector + keyword search with RRF merging ───────────────
+
+async function findRelevantChunksHybrid(
+  questionEmbedding: number[],
+  question: string,
+  topK: number
+): Promise<(EmbeddingRow & { similarity: number })[]> {
+  const cache = await getCachedEmbeddings();
+  const { keywords, boostParts } = expandQuery(question);
+  const RRF_K = 60; // Reciprocal Rank Fusion constant
+  const candidateCount = topK * 3;
+
+  // 1. Vector search — score all chunks, keep top N
+  const vectorScored: { idx: number; sim: number }[] = [];
+  for (let i = 0; i < cache.rows.length; i++) {
+    const sim = cosineSimilarity(questionEmbedding, cache.vectors[i]);
+    vectorScored.push({ idx: i, sim });
+  }
+  vectorScored.sort((a, b) => b.sim - a.sim);
+  const vectorTop = vectorScored.slice(0, candidateCount);
+
+  // 2. Keyword search — match expanded keywords against chunk text
+  const keywordScored: { idx: number; matchCount: number }[] = [];
+  if (keywords.length > 0) {
+    for (let i = 0; i < cache.rows.length; i++) {
+      const text = cache.textLower[i];
+      let matchCount = 0;
+      for (const kw of keywords) {
+        if (text.includes(kw)) matchCount++;
+      }
+      if (matchCount > 0) {
+        keywordScored.push({ idx: i, matchCount });
+      }
+    }
+    keywordScored.sort((a, b) => b.matchCount - a.matchCount);
+  }
+  const keywordTop = keywordScored.slice(0, candidateCount);
+
+  // 3. Part-boosted search — if we detected relevant parts, get top chunks from them
+  const partBoosted: { idx: number }[] = [];
+  if (boostParts.length > 0) {
+    // Get vector-scored chunks from the boosted parts
+    const partChunks = vectorScored
+      .filter(({ idx }) => {
+        const part = cache.rows[idx].part;
+        return part && boostParts.includes(part);
+      })
+      .slice(0, candidateCount);
+    partBoosted.push(...partChunks);
+  }
+
+  // 4. Reciprocal Rank Fusion — combine all three rankings
+  const rrfScores = new Map<number, number>();
+
+  vectorTop.forEach(({ idx }, rank) => {
+    rrfScores.set(idx, (rrfScores.get(idx) ?? 0) + 1 / (RRF_K + rank));
+  });
+
+  keywordTop.forEach(({ idx }, rank) => {
+    rrfScores.set(idx, (rrfScores.get(idx) ?? 0) + 1 / (RRF_K + rank));
+  });
+
+  // Part boost gets equal weight to ensure topical relevance
+  partBoosted.forEach(({ idx }, rank) => {
+    rrfScores.set(idx, (rrfScores.get(idx) ?? 0) + 1 / (RRF_K + rank));
+  });
+
+  // 5. Sort by RRF score, then apply section diversity (max 3 chunks per section)
+  const sorted = [...rrfScores.entries()].sort((a, b) => b[1] - a[1]);
+  const vectorSimMap = new Map(vectorTop.map((v) => [v.idx, v.sim]));
+  const MAX_PER_SECTION = 3;
+  const sectionCounts = new Map<string, number>();
+  const results: (EmbeddingRow & { similarity: number })[] = [];
+
+  for (const [idx] of sorted) {
+    if (results.length >= topK + 6) break;
+    const row = cache.rows[idx];
+    const secKey = row.section ?? row.part ?? "unknown";
+    const count = sectionCounts.get(secKey) ?? 0;
+    if (count >= MAX_PER_SECTION) continue;
+    sectionCounts.set(secKey, count + 1);
+    results.push({ ...row, similarity: vectorSimMap.get(idx) ?? 0 });
+  }
+
+  return results;
+}
+
+// ── Section ID cleanup (strip appendix suffixes for valid links) ─────────────
+
+function cleanSectionId(section: string | null): string | null {
+  if (!section) return null;
+  // "390-appA" → "390.3" isn't possible, so strip appendix sections from links
+  // They generate 404s. Return null to omit from links.
+  if (section.includes("-app") || section.includes("App")) return null;
+  return section;
 }
 
 // ── Find related content (videos, articles) via FTS ──────────────────────────
@@ -277,20 +397,22 @@ export async function POST(request: NextRequest) {
       findRelatedContent(question),
     ]);
 
-    // 5. Vector search — fetch extra chunks, then ensure regulation text dominates
-    const rawChunks = await findRelevantChunks(embedding, TOP_K + 6);
+    // 5. Hybrid search (vector + keyword) with RRF merging
+    const rawChunks = await findRelevantChunksHybrid(embedding, question, TOP_K);
 
-    // Separate and re-merge: take all regulation chunks + top guidance by similarity
+    // Separate and re-merge: take all regulation chunks + top guidance
     const regRaw = rawChunks.filter((c) => c.sourceType === "REGULATION");
     const guidRaw = rawChunks.filter((c) => c.sourceType !== "REGULATION");
-    // Combine: all regulation + up to (TOP_K - regCount) guidance, minimum 8 total
     const guidanceSlots = Math.max(3, TOP_K - regRaw.length);
-    const chunks = [...regRaw, ...guidRaw.slice(0, guidanceSlots)]
-      .sort((a, b) => b.similarity - a.similarity);
+    const chunks = [...regRaw, ...guidRaw.slice(0, guidanceSlots)];
 
-    // 6. Look up related insights for cited sections
+    // 6. Look up related insights for cited sections (skip appendix sections)
     const sections = [
-      ...new Set(chunks.filter((c) => c.section).map((c) => c.section!)),
+      ...new Set(
+        chunks
+          .map((c) => cleanSectionId(c.section))
+          .filter((s): s is string => s !== null)
+      ),
     ];
     let insightRefs: { section: string; title: string; type: string }[] = [];
     if (sections.length > 0) {
@@ -319,12 +441,19 @@ export async function POST(request: NextRequest) {
 
     let context = "=== CURRENT REGULATORY TEXT ===\n\n";
     context += regChunks
-      .map((c) => `--- § ${c.section} - ${c.title} ---\n${c.chunkText}`)
+      .map((c) => {
+        const cleanId = cleanSectionId(c.section);
+        const label = cleanId ? `§ ${cleanId}` : c.part ? `Part ${c.part}` : "General";
+        return `--- ${label} - ${c.title} ---\n${c.chunkText}`;
+      })
       .join("\n\n");
 
     // Guidance: titles only (no full text — avoids outdated numbers polluting answers)
     const guidanceTitles = guidanceChunks
-      .map((c) => `- "${c.title}" (§ ${c.section ?? "general"})`)
+      .map((c) => {
+        const cleanId = cleanSectionId(c.section);
+        return `- "${c.title}" (${cleanId ? `§ ${cleanId}` : "general"})`;
+      })
       .slice(0, 5);
     const allInsightTitles = [
       ...guidanceTitles,
