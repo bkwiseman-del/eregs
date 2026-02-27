@@ -18,7 +18,8 @@ function createPrismaClient() {
 // Clear cached client after schema changes (prisma generate)
 if (process.env.NODE_ENV !== "production" && globalForPrisma.prisma) {
   // Force refresh if new models are missing (e.g., after prisma generate)
-  if (!("insightRequest" in globalForPrisma.prisma) || !("feedItem" in globalForPrisma.prisma)) {
+  const requiredModels = ["insightRequest", "feedItem", "searchDocument", "embedding", "aiChatUsage"] as const;
+  if (requiredModels.some((m) => !(m in globalForPrisma.prisma!))) {
     globalForPrisma.prisma = undefined;
   }
 }

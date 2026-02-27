@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 
 const logoSvg = (
@@ -17,25 +19,54 @@ const logoSvg = (
   </svg>
 );
 
+const sparkleIcon = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z" />
+    <path d="M19 15l.5 2 2 .5-2 .5-.5 2-.5-2-2-.5 2-.5.5-2z" />
+  </svg>
+);
+
 interface AppNavProps {
-  /** Optional slot rendered between the logo and search bar (e.g. TOC toggle) */
   leftAction?: React.ReactNode;
-  /** Optional buttons rendered between the search bar and avatar (e.g. insights, bookmark) */
   rightActions?: React.ReactNode;
-  /** On mobile, replaces the default spacer with custom content (e.g. location pill) */
   mobileCenter?: React.ReactNode;
-  /** On mobile, hide the search bar and left action */
   isMobile?: boolean;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  onSearchSubmit?: () => void;
+  aiMode?: boolean;
+  onToggleAi?: () => void;
+  isPro?: boolean;
 }
 
-export function AppNav({ leftAction, rightActions, mobileCenter, isMobile }: AppNavProps) {
+export function AppNav({
+  leftAction, rightActions, mobileCenter, isMobile,
+  searchValue, onSearchChange, onSearchSubmit, aiMode, onToggleAi, isPro,
+}: AppNavProps) {
   const { data: session } = useSession();
+  const router = useRouter();
   const name = session?.user?.name ?? session?.user?.email?.split("@")[0] ?? "";
   const initials = name
     .split(/\s+/)
     .map(w => w[0]?.toUpperCase())
     .slice(0, 2)
     .join("") || "U";
+
+  const isControlled = onSearchChange !== undefined;
+
+  // Global `/` keyboard shortcut → focus or navigate to search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "/" && !["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement).tagName)) {
+        e.preventDefault();
+        if (!isControlled) {
+          router.push("/search");
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isControlled, router]);
 
   return (
     <nav style={{
@@ -54,21 +85,64 @@ export function AppNav({ leftAction, rightActions, mobileCenter, isMobile }: App
           {leftAction}
 
           {/* Search bar */}
-          <div style={{
-            flex: 1, maxWidth: 520, display: "flex", alignItems: "center", gap: 8,
-            background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8,
-            padding: "0 10px", height: 34,
-          }}>
+          <div
+            style={{
+              flex: 1, maxWidth: 520, display: "flex", alignItems: "center", gap: 8,
+              background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8,
+              padding: "0 10px", height: 34,
+              cursor: isControlled ? undefined : "pointer",
+            }}
+            onClick={isControlled ? undefined : () => router.push("/search")}
+          >
             <svg width="14" height="14" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" placeholder="Search regulations, guidance, insights…" style={{
-              flex: 1, border: "none", background: "transparent",
-              fontSize: 13, color: "var(--text)", outline: "none",
-              fontFamily: "'Inter', sans-serif",
-            }} />
-            <kbd style={{
-              fontSize: 11, color: "var(--text3)", background: "var(--bg3)",
-              padding: "1px 5px", borderRadius: 4, border: "1px solid var(--border)", fontFamily: "inherit",
-            }}>/</kbd>
+
+            {isControlled ? (
+              <input
+                type="text"
+                placeholder={aiMode ? "Ask a regulatory question\u2026" : "Search regulations, guidance, insights\u2026"}
+                value={searchValue ?? ""}
+                onChange={e => onSearchChange!(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") onSearchSubmit?.(); }}
+                autoFocus
+                style={{
+                  flex: 1, border: "none", background: "transparent",
+                  fontSize: 13, color: "var(--text)", outline: "none",
+                  fontFamily: "'Inter', sans-serif",
+                }}
+              />
+            ) : (
+              <span style={{
+                flex: 1, fontSize: 13, color: "var(--text3)",
+                fontFamily: "'Inter', sans-serif", userSelect: "none",
+              }}>
+                Search regulations, guidance, insights…
+              </span>
+            )}
+
+            {/* AI sparkle toggle or `/` hint */}
+            {isControlled ? (
+              <button
+                onClick={e => { e.stopPropagation(); onToggleAi?.(); }}
+                title={aiMode ? "Switch to search" : isPro ? "Ask AI" : "Ask AI (Pro)"}
+                style={{
+                  border: "none", background: "transparent", padding: 2, cursor: "pointer",
+                  color: aiMode ? "var(--accent)" : "var(--text3)",
+                  display: "flex", alignItems: "center", position: "relative",
+                }}
+              >
+                {sparkleIcon}
+                {!isPro && (
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" style={{ position: "absolute", top: -2, right: -4 }}>
+                    <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM15 8H9V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z"/>
+                  </svg>
+                )}
+              </button>
+            ) : (
+              <kbd style={{
+                fontSize: 11, color: "var(--text3)", background: "var(--bg3)",
+                padding: "1px 5px", borderRadius: 4, border: "1px solid var(--border)", fontFamily: "inherit",
+              }}>/</kbd>
+            )}
           </div>
         </>
       )}

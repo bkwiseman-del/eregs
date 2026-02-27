@@ -2,71 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-
-// ── Search Overlay ──────────────────────────────────────────────────────────
-
-function SearchOverlay({ onClose }: { onClose: () => void }) {
-  const router = useRouter();
-  const [query, setQuery] = useState("");
-
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 9999,
-      background: "rgba(0,0,0,0.5)", display: "flex", flexDirection: "column",
-    }}>
-      <div style={{
-        background: "var(--white)", padding: "12px 14px",
-        display: "flex", alignItems: "center", gap: 10,
-        borderBottom: "1px solid var(--border)",
-        paddingTop: "max(12px, env(safe-area-inset-top))",
-      }}>
-        <div style={{
-          flex: 1, display: "flex", alignItems: "center", gap: 8,
-          background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8,
-          padding: "0 10px", height: 38,
-        }}>
-          <svg width="14" height="14" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input
-            type="text"
-            placeholder="Search regulations, guidance, insights…"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            autoFocus
-            style={{
-              flex: 1, border: "none", background: "transparent",
-              fontSize: 15, color: "var(--text)", outline: "none",
-              fontFamily: "'Inter', sans-serif",
-            }}
-          />
-          {query && (
-            <button onClick={() => setQuery("")} style={{
-              border: "none", background: "transparent", padding: 2, cursor: "pointer", color: "var(--text3)",
-            }}>
-              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          )}
-        </div>
-        <button onClick={onClose} style={{
-          border: "none", background: "transparent", color: "var(--accent)",
-          fontSize: 14, fontWeight: 500, cursor: "pointer", padding: "6px 2px",
-          fontFamily: "'Inter', sans-serif",
-        }}>
-          Cancel
-        </button>
-      </div>
-
-      {/* Results placeholder */}
-      <div onClick={onClose} style={{ flex: 1, padding: 20 }}>
-        {query.length > 0 && (
-          <div style={{ color: "var(--white)", fontSize: 13, textAlign: "center", marginTop: 40, opacity: 0.7 }}>
-            Search coming soon
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+import { usePathname } from "next/navigation";
 
 // ── More Menu ───────────────────────────────────────────────────────────────
 
@@ -115,7 +51,6 @@ const libraryPaths = ["/notes", "/highlights", "/saved"];
 
 export function MobileBottomTabs({ isPaid = false }: { isPaid?: boolean }) {
   const pathname = usePathname();
-  const [searchOpen, setSearchOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const tabs = [
@@ -135,9 +70,9 @@ export function MobileBottomTabs({ isPaid = false }: { isPaid?: boolean }) {
     },
     {
       label: "Search",
-      action: "search" as const,
+      action: "/search" as const,
       icon: <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
-      active: searchOpen,
+      active: pathname === "/search",
       proOnly: false,
     },
     {
@@ -167,18 +102,13 @@ export function MobileBottomTabs({ isPaid = false }: { isPaid?: boolean }) {
           const locked = tab.proOnly && !isPaid;
 
           const handleClick = (e: React.MouseEvent) => {
-            if (tab.action === "search") {
-              e.preventDefault();
-              setSearchOpen(true);
-              setMoreOpen(false);
-            } else if (tab.action === "more") {
+            if (tab.action === "more") {
               e.preventDefault();
               setMoreOpen(!moreOpen);
-              setSearchOpen(false);
             }
           };
 
-          const isLink = tab.action !== "search" && tab.action !== "more";
+          const isLink = tab.action !== "more";
 
           const content = (
             <div style={{
@@ -215,7 +145,6 @@ export function MobileBottomTabs({ isPaid = false }: { isPaid?: boolean }) {
         })}
       </nav>
 
-      {searchOpen && <SearchOverlay onClose={() => setSearchOpen(false)} />}
       {moreOpen && <MoreMenu onClose={() => setMoreOpen(false)} isPaid={isPaid} />}
     </>
   );

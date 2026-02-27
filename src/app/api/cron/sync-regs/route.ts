@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { syncPart, syncStructure, checkStaleness } from "@/lib/ecfr";
+import { indexRegulationSection } from "@/lib/search-index";
+import { db } from "@/lib/db";
 
 // Sync one part at a time to stay within Vercel timeout limits.
 // Usage:
@@ -30,6 +32,25 @@ export async function POST(request: NextRequest) {
 
     if (step === "part" && part) {
       const result = await syncPart(part);
+
+      // Re-index updated sections in the search index
+      if (result.updated > 0) {
+        const sections = await db.cachedSection.findMany({
+          where: { part },
+          select: { section: true },
+        });
+        let indexed = 0;
+        for (const s of sections) {
+          try {
+            await indexRegulationSection(s.section);
+            indexed++;
+          } catch {
+            // Non-fatal: search index update failure shouldn't block the sync
+          }
+        }
+        return NextResponse.json({ success: true, ...result, searchIndexed: indexed });
+      }
+
       return NextResponse.json({ success: true, ...result });
     }
 

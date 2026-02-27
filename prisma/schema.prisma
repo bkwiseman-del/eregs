@@ -469,3 +469,55 @@ model CachedImage {
   data        Bytes
   cachedAt    DateTime @default(now())
 }
+
+// ── SEARCH INDEX ─────────────────────────────────────────────────────────────
+
+model SearchDocument {
+  id           String   @id @default(cuid())
+  sourceType   String   // REGULATION | GUIDANCE | VIDEO | ARTICLE | PODCAST
+  sourceId     String
+  title        String
+  snippet      String   @db.Text
+  section      String?
+  part         String?
+  url          String?
+  publisher    String?
+  thumbnailUrl String?
+  plainText    String   @db.Text // Full text for FTS indexing
+  // searchVector tsvector column added via raw SQL (setup-search-db.ts)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([sourceType, sourceId])
+  @@index([sourceType])
+  @@index([section])
+}
+
+// ── VECTOR EMBEDDINGS (for AI Q&A) ──────────────────────────────────────────
+
+model Embedding {
+  id         String   @id @default(cuid())
+  sourceType String   // REGULATION | GUIDANCE
+  sourceId   String
+  chunkIndex Int      @default(0)
+  section    String?
+  part       String?
+  title      String
+  chunkText  String   @db.Text
+  // embedding vector(1536) column added via raw SQL (setup-search-db.ts)
+  createdAt  DateTime @default(now())
+
+  @@unique([sourceType, sourceId, chunkIndex])
+  @@index([sourceType])
+}
+
+// ── AI CHAT RATE LIMITING ───────────────────────────────────────────────────
+
+model AiChatUsage {
+  id        String   @id @default(cuid())
+  userId    String
+  question  String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
