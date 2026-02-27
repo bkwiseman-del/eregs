@@ -1,18 +1,13 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { auth, canAccessPro } from "@/lib/auth";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 
 export default async function DashboardPage() {
   const session = await auth();
   if (!session) redirect("/login");
+  if (!canAccessPro(session)) redirect("/regs/390.1");
 
-  return (
-    <div className="min-h-screen bg-stone-50 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold text-stone-900 mb-2">
-          Welcome, {session.user?.name ?? session.user?.email}
-        </h1>
-        <p className="text-stone-500 text-sm">Dashboard coming soon.</p>
-      </div>
-    </div>
-  );
+  const userName = session.user?.name ?? session.user?.email?.split("@")[0] ?? "there";
+
+  return <DashboardShell userName={userName} />;
 }

@@ -404,6 +404,35 @@ model InsightRequest {
   @@index([section, type])
 }
 
+// ── DASHBOARD FEED ───────────────────────────────────────────────────────────
+
+enum FeedItemType {
+  VIDEO
+  PODCAST
+  ARTICLE
+}
+
+model FeedItem {
+  id         String       @id @default(cuid())
+  type       FeedItemType
+  externalId String       @unique // YouTube video ID, RSS guid, or article URL slug
+
+  title        String
+  description  String? @db.Text
+  url          String
+  thumbnailUrl String?
+
+  publisher    String @default("Trucksafe")
+  duration     String? // display string: "11:24" or "54 min"
+  durationSecs Int? // duration in seconds
+  audioUrl     String? // direct MP3 URL for podcast episodes
+  episodeNum   Int? // podcast episode number
+
+  publishedAt DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 // ── REGULATION CONTENT CACHE (DO NOT MODIFY — populated data) ────────────────
 
 model CachedSection {
