@@ -336,6 +336,11 @@ export function ActionBar({
       </div>
 
       <style>{`
+        @media (max-width: 899px) {
+          .action-bar-outer {
+            bottom: calc(54px + env(safe-area-inset-bottom, 0px)) !important;
+          }
+        }
         @media (min-width: 900px) {
           .action-bar-outer {
             bottom: 16px !important;
