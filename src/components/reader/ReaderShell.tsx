@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import type { EcfrSection, PartToc } from "@/lib/ecfr";
 import type { ReaderAnnotation } from "@/lib/annotations";
@@ -110,6 +111,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   // ── Layout state ────────────────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const searchParams = useSearchParams();
   const [isMobile, setIsMobile] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
 
@@ -127,6 +129,13 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     if (savedWidth) setTocWidth(Math.max(TOC_MIN, Math.min(TOC_MAX, Number(savedWidth))));
     if (localStorage.getItem("eregs-toc-collapsed") === "1") setTocCollapsed(true);
   }, []);
+
+  // Auto-open insights panel when navigated with ?insights=open
+  useEffect(() => {
+    if (searchParams.get("insights") === "open") {
+      setInsightsOpen(true);
+    }
+  }, [searchParams]);
 
   const handleTocResize = useCallback((delta: number) => {
     setTocWidth(w => {
