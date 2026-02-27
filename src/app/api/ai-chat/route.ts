@@ -120,28 +120,35 @@ async function getCachedEmbeddings(): Promise<EmbeddingCache> {
 interface TopicExpansion {
   terms: string[];
   parts: string[];
+  requiredSections?: string[]; // Sections that MUST appear in results for this topic
 }
 
 const TOPIC_MAP: Record<string, TopicExpansion> = {
-  hos: { terms: ["hours of service", "driving time", "on-duty", "off-duty", "sleeper berth"], parts: ["395"] },
-  "hours of service": { terms: ["driving time", "on-duty", "off-duty", "sleeper berth", "hours"], parts: ["395"] },
-  "driving time": { terms: ["hours of service", "on-duty", "driving"], parts: ["395"] },
-  eld: { terms: ["electronic logging device", "hours of service", "recording device"], parts: ["395"] },
-  drug: { terms: ["controlled substances", "drug testing", "alcohol testing"], parts: ["382", "40"] },
-  alcohol: { terms: ["controlled substances", "drug testing", "alcohol testing"], parts: ["382", "40"] },
-  qualification: { terms: ["driver qualification", "physical qualification", "medical examiner"], parts: ["391"] },
-  dq: { terms: ["driver qualification", "physical qualification"], parts: ["391"] },
+  hos: { terms: ["hours of service", "driving time", "on-duty", "off-duty", "sleeper berth"], parts: ["395"], requiredSections: ["395.1", "395.3", "395.5"] },
+  "hours of service": { terms: ["driving time", "on-duty", "off-duty", "sleeper berth", "hours"], parts: ["395"], requiredSections: ["395.1", "395.3", "395.5"] },
+  "driving time": { terms: ["hours of service", "on-duty", "driving"], parts: ["395"], requiredSections: ["395.3", "395.5"] },
+  eld: { terms: ["electronic logging device", "hours of service", "recording device"], parts: ["395"], requiredSections: ["395.8", "395.22"] },
+  drug: { terms: ["controlled substances", "drug testing", "alcohol testing"], parts: ["382"], requiredSections: ["382.301", "382.303"] },
+  alcohol: { terms: ["controlled substances", "drug testing", "alcohol testing"], parts: ["382"], requiredSections: ["382.301", "382.303"] },
+  qualification: { terms: ["driver qualification", "physical qualification", "medical examiner"], parts: ["391"], requiredSections: ["391.41", "391.43", "391.45"] },
+  dq: { terms: ["driver qualification", "physical qualification"], parts: ["391"], requiredSections: ["391.41", "391.43"] },
   cdl: { terms: ["commercial driver license", "knowledge test", "skills test"], parts: ["383"] },
   hazmat: { terms: ["hazardous materials", "placarding", "hazmat"], parts: ["397"] },
   insurance: { terms: ["financial responsibility", "surety bond", "insurance"], parts: ["387"] },
   inspection: { terms: ["vehicle inspection", "parts and accessories", "maintenance"], parts: ["393", "396"] },
   maintenance: { terms: ["vehicle inspection", "parts and accessories", "systematic inspection"], parts: ["396"] },
   brakes: { terms: ["brake", "stopping distance", "parking brake"], parts: ["393"] },
-  passenger: { terms: ["passenger carrier", "passenger carrying", "for-hire"], parts: ["390", "395", "387"] },
-  "short haul": { terms: ["short-haul", "150 air-mile", "air-mile radius"], parts: ["395"] },
+  passenger: { terms: ["passenger carrier", "passenger carrying", "for-hire"], parts: ["395"], requiredSections: ["395.1", "395.5"] },
+  "short haul": { terms: ["short-haul", "150 air-mile", "air-mile radius"], parts: ["395"], requiredSections: ["395.1"] },
 };
 
-function expandQuery(question: string): { keywords: string[]; boostParts: string[] } {
+// Sections that are appendices/reference tables — exclude from retrieval
+function isAppendixSection(section: string | null): boolean {
+  if (!section) return false;
+  return section.includes("-app") || section.includes("App");
+}
+
+function expandQuery(question: string): { keywords: string[]; boostParts: string[]; requiredSections: string[] } {
   const qLower = question.toLowerCase();
   const baseKeywords = qLower
     .replace(/[^a-z0-9\s-]/g, "")
@@ -150,12 +157,16 @@ function expandQuery(question: string): { keywords: string[]; boostParts: string
 
   const expandedTerms = new Set(baseKeywords);
   const boostParts = new Set<string>();
+  const requiredSections = new Set<string>();
 
   // Check for topic matches in the full question text
   for (const [topic, expansion] of Object.entries(TOPIC_MAP)) {
     if (qLower.includes(topic)) {
       for (const term of expansion.terms) expandedTerms.add(term);
       for (const part of expansion.parts) boostParts.add(part);
+      if (expansion.requiredSections) {
+        for (const sec of expansion.requiredSections) requiredSections.add(sec);
+      }
     }
   }
 
@@ -165,13 +176,16 @@ function expandQuery(question: string): { keywords: string[]; boostParts: string
     if (expansion) {
       for (const term of expansion.terms) expandedTerms.add(term);
       for (const part of expansion.parts) boostParts.add(part);
+      if (expansion.requiredSections) {
+        for (const sec of expansion.requiredSections) requiredSections.add(sec);
+      }
     }
   }
 
-  return { keywords: [...expandedTerms], boostParts: [...boostParts] };
+  return { keywords: [...expandedTerms], boostParts: [...boostParts], requiredSections: [...requiredSections] };
 }
 
-// ── Hybrid retrieval: vector + keyword search with RRF merging ───────────────
+// ── Hybrid retrieval: vector + keyword + title-match + part-boost with RRF ────
 
 async function findRelevantChunksHybrid(
   questionEmbedding: number[],
@@ -179,13 +193,19 @@ async function findRelevantChunksHybrid(
   topK: number
 ): Promise<(EmbeddingRow & { similarity: number })[]> {
   const cache = await getCachedEmbeddings();
-  const { keywords, boostParts } = expandQuery(question);
+  const { keywords, boostParts, requiredSections } = expandQuery(question);
   const RRF_K = 60; // Reciprocal Rank Fusion constant
   const candidateCount = topK * 3;
 
-  // 1. Vector search — score all chunks, keep top N
-  const vectorScored: { idx: number; sim: number }[] = [];
+  // Pre-filter: exclude appendix sections (reference tables, not operative regulation)
+  const validIndices: number[] = [];
   for (let i = 0; i < cache.rows.length; i++) {
+    if (!isAppendixSection(cache.rows[i].section)) validIndices.push(i);
+  }
+
+  // 1. Vector search — score valid chunks, keep top N
+  const vectorScored: { idx: number; sim: number }[] = [];
+  for (const i of validIndices) {
     const sim = cosineSimilarity(questionEmbedding, cache.vectors[i]);
     vectorScored.push({ idx: i, sim });
   }
@@ -195,7 +215,7 @@ async function findRelevantChunksHybrid(
   // 2. Keyword search — match expanded keywords against chunk text
   const keywordScored: { idx: number; matchCount: number }[] = [];
   if (keywords.length > 0) {
-    for (let i = 0; i < cache.rows.length; i++) {
+    for (const i of validIndices) {
       const text = cache.textLower[i];
       let matchCount = 0;
       for (const kw of keywords) {
@@ -209,10 +229,24 @@ async function findRelevantChunksHybrid(
   }
   const keywordTop = keywordScored.slice(0, candidateCount);
 
-  // 3. Part-boosted search — if we detected relevant parts, get top chunks from them
+  // 3. Title-match search — chunks whose TITLE matches keywords get extra signal
+  const titleScored: { idx: number; titleHits: number }[] = [];
+  if (keywords.length > 0) {
+    for (const i of validIndices) {
+      const titleLower = cache.rows[i].title.toLowerCase();
+      let titleHits = 0;
+      for (const kw of keywords) {
+        if (titleLower.includes(kw)) titleHits++;
+      }
+      if (titleHits > 0) titleScored.push({ idx: i, titleHits });
+    }
+    titleScored.sort((a, b) => b.titleHits - a.titleHits);
+  }
+  const titleTop = titleScored.slice(0, candidateCount);
+
+  // 4. Part-boosted search — top chunks from topically relevant parts
   const partBoosted: { idx: number }[] = [];
   if (boostParts.length > 0) {
-    // Get vector-scored chunks from the boosted parts
     const partChunks = vectorScored
       .filter(({ idx }) => {
         const part = cache.rows[idx].part;
@@ -222,7 +256,7 @@ async function findRelevantChunksHybrid(
     partBoosted.push(...partChunks);
   }
 
-  // 4. Reciprocal Rank Fusion — combine all three rankings
+  // 5. Reciprocal Rank Fusion — combine all four rankings
   const rrfScores = new Map<number, number>();
 
   vectorTop.forEach(({ idx }, rank) => {
@@ -233,26 +267,52 @@ async function findRelevantChunksHybrid(
     rrfScores.set(idx, (rrfScores.get(idx) ?? 0) + 1 / (RRF_K + rank));
   });
 
-  // Part boost gets equal weight to ensure topical relevance
+  // Title matches get 1.5x weight — a title match is a strong relevance signal
+  titleTop.forEach(({ idx }, rank) => {
+    rrfScores.set(idx, (rrfScores.get(idx) ?? 0) + 1.5 / (RRF_K + rank));
+  });
+
   partBoosted.forEach(({ idx }, rank) => {
     rrfScores.set(idx, (rrfScores.get(idx) ?? 0) + 1 / (RRF_K + rank));
   });
 
-  // 5. Sort by RRF score, then apply section diversity (max 3 chunks per section)
+  // 6. Sort by RRF score, then apply section diversity
   const sorted = [...rrfScores.entries()].sort((a, b) => b[1] - a[1]);
   const vectorSimMap = new Map(vectorTop.map((v) => [v.idx, v.sim]));
-  const MAX_PER_SECTION = 3;
+  const boostPartsSet = new Set(boostParts);
+  const MAX_PER_SECTION_BOOSTED = 3; // Core topic sections get more slots
+  const MAX_PER_SECTION_OTHER = 1;   // Non-core sections get fewer
   const sectionCounts = new Map<string, number>();
   const results: (EmbeddingRow & { similarity: number })[] = [];
+  const resultSections = new Set<string>();
 
   for (const [idx] of sorted) {
     if (results.length >= topK + 6) break;
     const row = cache.rows[idx];
     const secKey = row.section ?? row.part ?? "unknown";
     const count = sectionCounts.get(secKey) ?? 0;
-    if (count >= MAX_PER_SECTION) continue;
+    const isBoostedPart = row.part != null && boostPartsSet.has(row.part);
+    const maxForSection = isBoostedPart ? MAX_PER_SECTION_BOOSTED : MAX_PER_SECTION_OTHER;
+    if (count >= maxForSection) continue;
     sectionCounts.set(secKey, count + 1);
     results.push({ ...row, similarity: vectorSimMap.get(idx) ?? 0 });
+    if (row.section) resultSections.add(row.section);
+  }
+
+  // 7. Ensure required sections have at least 1 chunk in results
+  if (requiredSections.length > 0) {
+    for (const reqSec of requiredSections) {
+      if (resultSections.has(reqSec)) continue;
+      // Find best chunk for this section from the vector-scored pool
+      const best = vectorScored.find(
+        ({ idx }) => cache.rows[idx].section === reqSec && cache.rows[idx].sourceType === "REGULATION"
+      );
+      if (best) {
+        const row = cache.rows[best.idx];
+        results.push({ ...row, similarity: best.sim });
+        resultSections.add(reqSec);
+      }
+    }
   }
 
   return results;
