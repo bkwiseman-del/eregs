@@ -8,6 +8,9 @@ interface Message {
   content: string;
 }
 
+// Module-level chat history cache — persists across page navigations
+let chatCache: { messages: Message[]; remaining: number | null } = { messages: [], remaining: null };
+
 interface Citation {
   section: string | null;
   part: string | null;
@@ -19,6 +22,42 @@ interface Citation {
 interface Props {
   isPaid: boolean;
   onSubmitRef?: React.MutableRefObject<((q: string) => void) | null>;
+}
+
+// Post-process AI response to fix links: rewrite external regulation/FMCSA URLs to internal /regs/ format
+function fixLinks(text: string): string {
+  // Match markdown links: [label](url)
+  return text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (full, label: string, href: string) => {
+    // Already internal — keep as-is
+    if (href.startsWith("/")) return full;
+
+    // Extract section number from the link text (e.g., "§ 395.1" or "§ 395.1(e)")
+    const sectionMatch = label.match(/§\s*([\d]+\.[\d]+)/);
+
+    // External eCFR link → rewrite to internal
+    if (href.includes("ecfr.gov")) {
+      // Try to extract section from URL: /section-395.1 or /section-395.1#p-395.1(e)
+      const urlSection = href.match(/section[/-]([\d]+\.[\d]+)/)?.[1];
+      const section = urlSection ?? sectionMatch?.[1];
+      if (section) return `[${label}](/regs/${section})`;
+      return `[${label}](/regs/)`;
+    }
+
+    // External FMCSA link → rewrite to internal guidance link
+    if (href.includes("fmcsa.dot.gov")) {
+      const section = sectionMatch?.[1];
+      if (section) return `[${label}](/regs/${section}?insights=open)`;
+      // No section found — try to make it a guidance link from context
+      return `[${label}](/regs/)`;
+    }
+
+    // Any other external link referencing a section → internalize
+    if (sectionMatch?.[1] && !href.startsWith("http")) {
+      return `[${label}](/regs/${sectionMatch[1]})`;
+    }
+
+    return full;
+  });
 }
 
 // Simple markdown rendering — handles bold, bullets, headers, and links
@@ -158,12 +197,17 @@ function extractCitations(text: string): SourceCitation[] {
 }
 
 export function AiChat({ isPaid, onSubmitRef }: Props) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(chatCache.messages);
   const [streaming, setStreaming] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [remaining, setRemaining] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState<number | null>(chatCache.remaining);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Persist chat history to module cache
+  useEffect(() => {
+    chatCache = { messages, remaining };
+  }, [messages, remaining]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -227,11 +271,12 @@ export function AiChat({ isPaid, onSubmitRef }: Props) {
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
           fullContent += chunk;
-          setStreaming(fullContent);
+          setStreaming(fixLinks(fullContent));
         }
       }
 
-      setMessages((prev) => [...prev, { role: "assistant", content: fullContent }]);
+      const fixed = fixLinks(fullContent);
+      setMessages((prev) => [...prev, { role: "assistant", content: fixed }]);
       setStreaming("");
     } catch {
       setError("Failed to connect. Please try again.");

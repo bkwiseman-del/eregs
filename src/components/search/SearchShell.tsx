@@ -106,26 +106,48 @@ const filters: { label: string; value: FilterType; icon: React.ReactNode; proOnl
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+// ── Session cache (survives remounts when navigating away and back) ──────────
+
+interface SearchCache {
+  query: string;
+  filter: FilterType;
+  results: SearchResult[];
+  total: number;
+  facets: Record<string, number>;
+  hasMore: boolean;
+}
+
+let searchCache: SearchCache | null = null;
+
 export function SearchShell({ isPaid, userName }: { isPaid: boolean; userName: string | null }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isMobile = useIsMobile();
 
-  // State
-  const [query, setQuery] = useState(searchParams.get("q") ?? "");
-  const [filter, setFilter] = useState<FilterType>(
-    (searchParams.get("type")?.toUpperCase() as FilterType) || "ALL"
-  );
+  // Restore from URL params first, then fall back to cache
+  const urlQ = searchParams.get("q");
+  const urlType = searchParams.get("type")?.toUpperCase() as FilterType | undefined;
+
+  // State — initialize from cache if returning to page
+  const [query, setQuery] = useState(urlQ ?? searchCache?.query ?? "");
+  const [filter, setFilter] = useState<FilterType>(urlType || searchCache?.filter || "ALL");
   const [aiMode, setAiMode] = useState(searchParams.get("mode") === "ai");
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [total, setTotal] = useState(0);
-  const [facets, setFacets] = useState<Record<string, number>>({});
-  const [hasMore, setHasMore] = useState(false);
+  const [results, setResults] = useState<SearchResult[]>(searchCache?.results ?? []);
+  const [total, setTotal] = useState(searchCache?.total ?? 0);
+  const [facets, setFacets] = useState<Record<string, number>>(searchCache?.facets ?? {});
+  const [hasMore, setHasMore] = useState(searchCache?.hasMore ?? false);
   const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [searched, setSearched] = useState(searchCache ? searchCache.results.length > 0 || !!searchCache.query : false);
   const inputRef = useRef<HTMLInputElement>(null);
   const aiChatRef = useRef<{ submitQuestion: (q: string) => void }>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Persist search state to module cache on changes
+  useEffect(() => {
+    if (!aiMode) {
+      searchCache = { query, filter, results, total, facets, hasMore };
+    }
+  }, [query, filter, results, total, facets, hasMore, aiMode]);
 
   // Focus input on mount
   useEffect(() => {

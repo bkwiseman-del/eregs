@@ -7,7 +7,7 @@ import { streamText } from "ai";
 export const maxDuration = 30;
 
 const DAILY_LIMIT = 20;
-const TOP_K = 8;
+const TOP_K = 12;
 const EMBEDDING_MODEL = "text-embedding-3-small";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -189,16 +189,31 @@ async function findRelatedContent(question: string): Promise<ContentResult[]> {
 
 const SYSTEM_PROMPT = `You are an expert regulatory assistant for the Federal Motor Carrier Safety Regulations (FMCSRs) — Title 49 CFR Parts 40, 376, 380-399. You help fleet managers, safety directors, and truck drivers understand regulatory requirements.
 
+SOURCE HIERARCHY (critical — you MUST follow this):
+- The CURRENT REGULATORY TEXT section is the authoritative, legally binding source of truth. ALL specific numbers (distances, hours, time limits, thresholds) MUST come from the regulatory text. Always base your answer on regulation text first.
+- FMCSA Guidance is advisory and interpretive only — it is NOT legally binding. FMCSA guidance may reference OUTDATED rule versions with old numbers that have since been amended. If guidance mentions different numbers or requirements than the regulatory text, ALWAYS use the regulatory text numbers and IGNORE the guidance numbers. You may reference guidance for interpretive context but never for specific regulatory requirements.
+- Related content (videos, articles) is supplementary educational material only.
+
+LINK FORMAT (critical — you MUST follow this exactly):
+- Regulation citations: [§ 395.1](/regs/395.1) — always use /regs/SECTION format
+- Guidance citations: [FMCSA Guidance on HOS](/regs/395.1?insights=open) — always use /regs/SECTION?insights=open
+- NEVER use external URLs like https://www.ecfr.gov/... or https://www.fmcsa.dot.gov/... for regulation or guidance links
+- The ONLY external URLs allowed are those provided in the RELATED CONTENT section for videos/articles
+
+CORRECT: [§ 395.1(e)](/regs/395.1)
+CORRECT: [FMCSA Guidance](/regs/395.1?insights=open)
+WRONG: [§ 395.1(e)](https://www.ecfr.gov/current/title-49/section-395.1)
+WRONG: [FMCSA Guidance](https://www.fmcsa.dot.gov/hours-service)
+
 RULES:
 1. Answer ONLY based on the provided context. If the context does not contain enough information, say so clearly.
 2. Use plain, professional language. Avoid legal jargon when possible.
-3. Always cite the specific regulation section(s) your answer is based on using markdown links: [§ XXX.X](/regs/XXX.X)
-4. When FMCSA Guidance is referenced in the context, cite it with: [FMCSA Guidance on TOPIC](/regs/XXX.X?insights=open) — note that guidance is advisory, not legally binding.
-5. If the question is ambiguous, ask for clarification.
-6. Do NOT make up or infer regulatory requirements that are not in the provided context.
-7. Format your response using markdown: use headers, bullet points, and bold for emphasis.
-8. Keep answers concise but thorough. Aim for 2-4 paragraphs unless the topic requires more detail.
-9. If RELATED CONTENT (videos, articles) is provided, include a "Related Content" section at the end with markdown links to relevant items.`;
+3. If the question is ambiguous, ask for clarification.
+4. Do NOT make up or infer regulatory requirements that are not in the provided context.
+5. Format your response using markdown: use headers, bullet points, and bold for emphasis.
+6. Keep answers concise but thorough. Aim for 2-4 paragraphs unless the topic requires more detail.
+7. If RELATED CONTENT (videos, articles) is provided, include a "Related Content" section at the end. Use the exact URLs provided for content links — these are the only external links you should use.
+8. When referencing FMCSA Guidance, always note it is advisory, not legally binding.`;
 
 // ── Handler ──────────────────────────────────────────────────────────────────
 
@@ -261,8 +276,16 @@ export async function POST(request: NextRequest) {
       findRelatedContent(question),
     ]);
 
-    // 5. Vector search for regulatory context
-    const chunks = await findRelevantChunks(embedding, TOP_K);
+    // 5. Vector search — fetch extra chunks, then ensure regulation text dominates
+    const rawChunks = await findRelevantChunks(embedding, TOP_K + 6);
+
+    // Separate and re-merge: take all regulation chunks + top guidance by similarity
+    const regRaw = rawChunks.filter((c) => c.sourceType === "REGULATION");
+    const guidRaw = rawChunks.filter((c) => c.sourceType !== "REGULATION");
+    // Combine: all regulation + up to (TOP_K - regCount) guidance, minimum 8 total
+    const guidanceSlots = Math.max(3, TOP_K - regRaw.length);
+    const chunks = [...regRaw, ...guidRaw.slice(0, guidanceSlots)]
+      .sort((a, b) => b.similarity - a.similarity);
 
     // 6. Look up related insights for cited sections
     const sections = [
@@ -285,20 +308,38 @@ export async function POST(request: NextRequest) {
       }));
     }
 
-    // 7. Build context
-    const context = chunks
-      .map((c, i) => {
-        const source =
-          c.sourceType === "REGULATION"
-            ? `Regulation § ${c.section}`
-            : `FMCSA Guidance (${c.section ?? "general"})`;
-        return `--- Source ${i + 1}: ${source} - ${c.title} ---\n${c.chunkText}`;
-      })
+    // 7. Build context — ONLY regulation text gets full inclusion.
+    //    Guidance text is excluded from context because it often contains
+    //    outdated numbers (e.g., pre-2020 "100 air miles" vs current "150").
+    //    Instead, guidance is referenced by title only so the model knows
+    //    it exists and can point users to it.
+    const regChunks = chunks.filter((c) => c.sourceType === "REGULATION");
+    const guidanceChunks = chunks.filter((c) => c.sourceType !== "REGULATION");
+
+    let context = "=== CURRENT REGULATORY TEXT ===\n\n";
+    context += regChunks
+      .map((c) => `--- § ${c.section} - ${c.title} ---\n${c.chunkText}`)
       .join("\n\n");
 
+    // Guidance: titles only (no full text — avoids outdated numbers polluting answers)
+    const guidanceTitles = guidanceChunks
+      .map((c) => `- "${c.title}" (§ ${c.section ?? "general"})`)
+      .slice(0, 5);
+    const allInsightTitles = [
+      ...guidanceTitles,
+      ...insightRefs.map((i) => `- ${i.type}: "${i.title}" (§ ${i.section})`),
+    ];
+    // Deduplicate by title
+    const seenTitles = new Set<string>();
+    const uniqueInsights = allInsightTitles.filter((t) => {
+      if (seenTitles.has(t)) return false;
+      seenTitles.add(t);
+      return true;
+    });
+
     const insightContext =
-      insightRefs.length > 0
-        ? `\n\nRELATED INSIGHTS AVAILABLE (mention if relevant):\n${insightRefs.map((i) => `- ${i.type}: "${i.title}" (§ ${i.section})`).join("\n")}`
+      uniqueInsights.length > 0
+        ? `\n\nFMCSA GUIDANCE AVAILABLE (advisory, not legally binding — mention relevant topics and link with [FMCSA Guidance on TOPIC](/regs/SECTION?insights=open)):\n${uniqueInsights.join("\n")}`
         : "";
 
     const contentContext =
@@ -313,12 +354,12 @@ export async function POST(request: NextRequest) {
 
     // 9. Stream response
     const result = streamText({
-      model: openai("gpt-4o-mini"),
+      model: openai("gpt-4o"),
       system: SYSTEM_PROMPT,
       messages: [
         {
           role: "user",
-          content: `REGULATORY CONTEXT:\n${context}${insightContext}${contentContext}\n\nQUESTION: ${question}\n\nProvide a clear, well-cited answer. Use [§ SECTION](/regs/SECTION) for regulation citations and [FMCSA Guidance](/regs/SECTION?insights=open) for guidance references.`,
+          content: `${context}${insightContext}${contentContext}\n\nQUESTION: ${question}\n\nIMPORTANT: All specific numbers, distances, hours, and thresholds MUST come from the CURRENT REGULATORY TEXT section above. If the FMCSA GUIDANCE section mentions different numbers, those are outdated — use ONLY the regulatory text values. Use internal links: [§ SECTION](/regs/SECTION) for regulations and [FMCSA Guidance](/regs/SECTION?insights=open) for guidance. Never link to ecfr.gov.`,
         },
       ],
     });
