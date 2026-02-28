@@ -766,7 +766,7 @@ export function DashboardShell({ userName, isFleet = false }: { userName: string
           {/* Greeting */}
           <div style={{ padding: "18px 18px 14px", borderBottom: "1px solid var(--border)" }}>
             <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 500, marginBottom: 3 }}>{greeting()}</div>
-            <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Lora', serif" }}>{userName}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Lora', serif" }}>{userName.split(" ")[0]}</div>
             <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 5, lineHeight: 1.5 }}>{todayDate()}</div>
           </div>
 
