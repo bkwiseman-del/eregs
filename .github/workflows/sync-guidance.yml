@@ -21,6 +21,9 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
     steps:
       - name: Checkout
@@ -52,8 +55,6 @@ jobs:
 
       - name: Run guidance sync
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           # Headed Playwright needs a virtual display on Linux
           DISPLAY: ":99"
         run: |
