@@ -350,14 +350,15 @@ export function SearchShell({ isPaid, isFleet = false, userName }: { isPaid: boo
         <main
           style={{
             flex: 1,
-            overflowY: "auto",
+            overflowY: aiMode ? "hidden" : "auto",
             minWidth: 0,
+            minHeight: 0,
             background: "var(--bg)",
             display: "flex",
             flexDirection: "column",
           }}
         >
-          <div style={{ maxWidth: 740, width: "100%", margin: "0 auto", flex: 1, display: "flex", flexDirection: "column" }}>
+          <div style={{ maxWidth: 740, width: "100%", margin: "0 auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             {aiMode ? (
               // ── AI Chat Mode ──
               <AiChatWrapper isPaid={isPaid} ref={aiChatRef} />

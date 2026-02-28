@@ -203,16 +203,16 @@ export function AiChat({ isPaid, onSubmitRef }: Props) {
   const [remaining, setRemaining] = useState<number | null>(chatCache.remaining);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   // Persist chat history to module cache
   useEffect(() => {
     chatCache = { messages, remaining };
   }, [messages, remaining]);
 
+  // Auto-scroll to bottom on new messages or streaming updates
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages, streaming]);
 
   // Expose submitQuestion to parent via ref
@@ -342,9 +342,9 @@ export function AiChat({ isPaid, onSubmitRef }: Props) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* Messages */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+      <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "20px 24px" }}>
         {messages.length === 0 && !streaming && (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
             <div
@@ -557,6 +557,9 @@ export function AiChat({ isPaid, onSubmitRef }: Props) {
             {error}
           </div>
         )}
+
+        {/* Scroll sentinel — scrollIntoView target for auto-scroll */}
+        <div ref={bottomRef} />
       </div>
 
       {/* Footer: disclaimer + usage meter */}

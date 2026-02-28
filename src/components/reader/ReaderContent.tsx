@@ -9,6 +9,10 @@ import { DiffView } from "./DiffView";
 import { ImpactReviewPanel } from "./ImpactReviewPanel";
 import { diffSections } from "@/lib/diff";
 
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 interface Props {
   section: EcfrSection;
   currentSectionContent?: EcfrNode[];
@@ -303,6 +307,62 @@ export function ReaderContent({
     }
   };
 
+  function printSection(sec: EcfrSection) {
+    const eregsUrl = `${window.location.origin}/regs/${sec.section}`;
+    const citation = sec.section.includes("-app")
+      ? sec.section.replace(/^\d+-app/, "Appendix ").replace(/-sub/, " to Subpart ")
+      : sec.section;
+
+    // Convert EcfrNode[] to clean HTML for printing
+    const contentHtml = sec.content.map((node) => {
+      const indent = Math.max(0, node.level - 1) * 24;
+      if (node.type === "heading") {
+        const tag = node.headingLevel === 1 ? "h3" : node.headingLevel === 2 ? "h4" : "h5";
+        return `<${tag} style="margin:16px 0 6px ${indent}px">${esc(node.text)}</${tag}>`;
+      }
+      if (node.type === "table") {
+        let html = `<table style="border-collapse:collapse;margin:12px 0 12px ${indent}px;font-size:12px;width:calc(100% - ${indent}px)">`;
+        if (node.tableHeaders?.length) {
+          html += "<thead><tr>" + node.tableHeaders.map(h => `<th style="border:1px solid #ccc;padding:4px 8px;text-align:left;background:#f5f5f5">${esc(h)}</th>`).join("") + "</tr></thead>";
+        }
+        if (node.tableRows?.length) {
+          html += "<tbody>" + node.tableRows.map(row => "<tr>" + row.map(c => `<td style="border:1px solid #ccc;padding:4px 8px">${esc(c)}</td>`).join("") + "</tr>").join("") + "</tbody>";
+        }
+        html += "</table>";
+        return html;
+      }
+      const label = node.label ? `<strong>${esc(node.label)}</strong> ` : "";
+      return `<p style="margin:3px 0;padding-left:${indent}px;line-height:1.65">${label}${esc(node.text)}</p>`;
+    }).join("\n");
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>§ ${esc(citation)} – ${esc(sec.title)}</title>
+<style>
+  body { font-family: Georgia, "Times New Roman", serif; max-width: 700px; margin: 0 auto; padding: 40px 24px 60px; color: #1a1a1a; font-size: 14px; }
+  h1 { font-size: 22px; font-weight: 400; margin: 0 0 4px; line-height: 1.3; }
+  h3 { font-size: 15px; font-weight: 700; }
+  h4 { font-size: 14px; font-weight: 600; }
+  h5 { font-size: 13px; font-weight: 600; }
+  .citation { font-family: "Courier New", monospace; font-size: 12px; color: #666; margin-bottom: 8px; }
+  .divider { border: none; border-top: 1px solid #ccc; margin: 16px 0 24px; }
+  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #ccc; font-family: sans-serif; font-size: 11px; color: #888; }
+  .footer a { color: #888; }
+  @media print { body { padding: 0; } }
+</style></head><body>
+<div class="citation">49 CFR § ${esc(citation)}</div>
+<h1>${esc(sec.title)}</h1>
+<hr class="divider">
+${contentHtml}
+<div class="footer">
+  Source: eRegs — <a href="${esc(eregsUrl)}">${esc(eregsUrl)}</a>
+</div>
+<script>window.onload=function(){window.print()}<\/script>
+</body></html>`;
+
+    const w = window.open("", "_blank");
+    if (w) { w.document.write(html); w.document.close(); }
+  }
+
   return (
     <div
       style={{ maxWidth: 740, margin: "0 auto", padding: "0 24px 120px" }}
@@ -438,6 +498,24 @@ export function ReaderContent({
               <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
             </svg>
           </a>
+
+          <button
+            onClick={() => printSection(section)}
+            style={{
+              display: "flex", alignItems: "center", gap: 4,
+              fontSize: 12, color: "var(--text3)",
+              background: "none", border: "none", cursor: "pointer",
+              padding: "2px 6px", borderRadius: 5,
+              fontFamily: "'Inter', sans-serif",
+            }}
+          >
+            <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <polyline points="6 9 6 2 18 2 18 9" />
+              <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" />
+              <rect x="6" y="14" width="12" height="8" />
+            </svg>
+            Print
+          </button>
         </div>
       </div>
 
