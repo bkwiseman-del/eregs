@@ -139,7 +139,8 @@ const TOPIC_MAP: Record<string, TopicExpansion> = {
   maintenance: { terms: ["vehicle inspection", "parts and accessories", "systematic inspection"], parts: ["396"] },
   brakes: { terms: ["brake", "stopping distance", "parking brake"], parts: ["393"] },
   passenger: { terms: ["passenger carrier", "passenger carrying", "for-hire"], parts: ["395"], requiredSections: ["395.1", "395.5"] },
-  "short haul": { terms: ["short-haul", "150 air-mile", "air-mile radius"], parts: ["395"], requiredSections: ["395.1"] },
+  "short haul": { terms: ["short-haul", "short haul", "150 air-mile", "air-mile radius", "air mile", "non-cdl", "time card", "timecard"], parts: ["395"], requiredSections: ["395.1"] },
+  "short-haul": { terms: ["short-haul", "short haul", "150 air-mile", "air-mile radius", "air mile", "non-cdl", "time card", "timecard"], parts: ["395"], requiredSections: ["395.1"] },
 };
 
 // Sections that are appendices/reference tables — exclude from retrieval
@@ -280,7 +281,7 @@ async function findRelevantChunksHybrid(
   const sorted = [...rrfScores.entries()].sort((a, b) => b[1] - a[1]);
   const vectorSimMap = new Map(vectorTop.map((v) => [v.idx, v.sim]));
   const boostPartsSet = new Set(boostParts);
-  const MAX_PER_SECTION_BOOSTED = 3; // Core topic sections get more slots
+  const MAX_PER_SECTION_BOOSTED = 5; // Core topic sections get more slots (large sections like 395.1 need many)
   const MAX_PER_SECTION_OTHER = 1;   // Non-core sections get fewer
   const sectionCounts = new Map<string, number>();
   const results: (EmbeddingRow & { similarity: number })[] = [];
@@ -299,17 +300,47 @@ async function findRelevantChunksHybrid(
     if (row.section) resultSections.add(row.section);
   }
 
-  // 7. Ensure required sections have at least 1 chunk in results
+  // 7. Ensure required sections have sufficient chunks in results
+  //    Large sections like 395.1 may have 20+ chunks — the RRF selection above
+  //    may only grab a few generic ones. We ensure at least 3 chunks per required
+  //    section, preferring those that match query keywords.
   if (requiredSections.length > 0) {
+    const MIN_REQUIRED_CHUNKS = 3;
     for (const reqSec of requiredSections) {
-      if (resultSections.has(reqSec)) continue;
-      // Find best chunk for this section from the vector-scored pool
-      const best = vectorScored.find(
-        ({ idx }) => cache.rows[idx].section === reqSec && cache.rows[idx].sourceType === "REGULATION"
-      );
-      if (best) {
-        const row = cache.rows[best.idx];
-        results.push({ ...row, similarity: best.sim });
+      const existingCount = results.filter((r) => r.section === reqSec).length;
+      const needed = MIN_REQUIRED_CHUNKS - existingCount;
+      if (needed <= 0) continue;
+
+      // Find best keyword-matching chunks for this section, fallback to vector-scored
+      const existingIds = new Set(results.map((r) => `${r.section}-${r.sourceId}`));
+      const candidateIdxs: number[] = [];
+
+      // Prefer keyword matches
+      for (const { idx } of keywordTop) {
+        if (candidateIdxs.length >= needed) break;
+        const row = cache.rows[idx];
+        if (row.section === reqSec && row.sourceType === "REGULATION" &&
+            !existingIds.has(`${row.section}-${row.sourceId}`)) {
+          candidateIdxs.push(idx);
+        }
+      }
+
+      // Fill remaining with vector-scored
+      if (candidateIdxs.length < needed) {
+        for (const { idx } of vectorScored) {
+          if (candidateIdxs.length >= needed) break;
+          const row = cache.rows[idx];
+          if (row.section === reqSec && row.sourceType === "REGULATION" &&
+              !existingIds.has(`${row.section}-${row.sourceId}`) &&
+              !candidateIdxs.includes(idx)) {
+            candidateIdxs.push(idx);
+          }
+        }
+      }
+
+      for (const idx of candidateIdxs) {
+        const row = cache.rows[idx];
+        results.push({ ...row, similarity: vectorSimMap.get(idx) ?? 0 });
         resultSections.add(reqSec);
       }
     }
