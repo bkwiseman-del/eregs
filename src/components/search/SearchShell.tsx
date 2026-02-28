@@ -298,7 +298,7 @@ export function SearchShell({ isPaid, isFleet = false, userName }: { isPaid: boo
                   flex: 1,
                   border: "none",
                   background: "transparent",
-                  fontSize: 14,
+                  fontSize: 16,
                   color: "var(--text)",
                   outline: "none",
                   fontFamily: "'Inter', sans-serif",

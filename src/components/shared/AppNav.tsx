@@ -106,7 +106,7 @@ export function AppNav({
                 autoFocus
                 style={{
                   flex: 1, border: "none", background: "transparent",
-                  fontSize: 13, color: "var(--text)", outline: "none",
+                  fontSize: 16, color: "var(--text)", outline: "none",
                   fontFamily: "'Inter', sans-serif",
                 }}
               />
