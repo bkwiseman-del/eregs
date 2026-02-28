@@ -203,8 +203,8 @@ export function MobileBottomTabs({ isPaid = false }: { isPaid?: boolean }) {
     <>
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0,
-        height: "calc(60px + env(safe-area-inset-bottom))",
-        paddingBottom: "env(safe-area-inset-bottom)",
+        height: "calc(60px + env(safe-area-inset-bottom, 0px) + 8px)",
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)",
         background: "var(--white)", borderTop: "1px solid var(--border)",
         display: "flex", zIndex: 200,
       }}>
