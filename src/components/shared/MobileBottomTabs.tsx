@@ -202,9 +202,11 @@ export function MobileBottomTabs({ isPaid = false }: { isPaid?: boolean }) {
   return (
     <>
       <nav style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, height: 54,
+        position: "fixed", bottom: 0, left: 0, right: 0,
+        height: "calc(60px + env(safe-area-inset-bottom))",
+        paddingBottom: "env(safe-area-inset-bottom)",
         background: "var(--white)", borderTop: "1px solid var(--border)",
-        display: "flex", zIndex: 200, paddingBottom: "env(safe-area-inset-bottom)",
+        display: "flex", zIndex: 200,
       }}>
         {tabs.map(tab => {
           const locked = tab.proOnly && !isPaid;
