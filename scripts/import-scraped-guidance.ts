@@ -26,6 +26,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import * as fs from "fs";
 import * as path from "path";
+import { cleanTitle, cleanBody } from "./clean-guidance";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const db = new PrismaClient({ adapter });
@@ -53,12 +54,15 @@ function cleanSectionIds(ids: string[]): string[] {
 
 /** Build a title from scraped entry (extract question if Q/A format) */
 function buildTitle(entry: ScrapedEntry): string {
+  // Clean body first for better Q/A extraction
+  const body = cleanBody(entry.body, entry.guidanceId);
+
   // If body has Q/A format, extract question
-  const qMatch = entry.body.match(
+  const qMatch = body.match(
     /(?:QUESTION|Q)[:.]?\s*(.*?)(?:\s*(?:ANSWER|A)[:.]|$)/si
   );
   if (qMatch && qMatch[1].trim().length > 10) {
-    let title = qMatch[1].trim();
+    let title = cleanTitle(qMatch[1].trim());
     if (title.length > 120) {
       title = title.slice(0, 120).replace(/\s+\S*$/, "") + "...";
     }
@@ -66,11 +70,17 @@ function buildTitle(entry: ScrapedEntry): string {
   }
 
   // Otherwise use the scraped title
-  let title = entry.title;
+  let title = cleanTitle(entry.title);
   if (title.length > 120) {
     title = title.slice(0, 120).replace(/\s+\S*$/, "") + "...";
   }
   return title;
+}
+
+/** Clean body text for DB storage */
+function buildBody(entry: ScrapedEntry): string | null {
+  if (!entry.body) return null;
+  return cleanBody(entry.body, entry.guidanceId) || null;
 }
 
 /** Parse issued date string to Date */
@@ -189,7 +199,7 @@ async function main() {
       // Check if content differs
       const titleChanged = existing.title !== buildTitle(entry);
       const bodyChanged =
-        entry.body && existing.body !== entry.body;
+        entry.body && existing.body !== buildBody(entry);
       const sectionsChanged =
         JSON.stringify(existing.sectionIds.sort()) !==
         JSON.stringify(cleanSectionIds(entry.sectionIds).sort());
@@ -281,7 +291,7 @@ async function main() {
         data: {
           type: "FMCSA_GUIDANCE",
           title: buildTitle(entry),
-          body: entry.body || null,
+          body: buildBody(entry),
           url: entry.url || null,
           sectionIds: cleanSectionIds(entry.sectionIds),
           paragraphIds: [],
@@ -303,7 +313,7 @@ async function main() {
         data: {
           type: "FMCSA_GUIDANCE",
           title: buildTitle(entry),
-          body: entry.body || null,
+          body: buildBody(entry),
           url: entry.url || null,
           sectionIds: cleanSectionIds(entry.sectionIds),
           paragraphIds: [],
@@ -326,7 +336,7 @@ async function main() {
           where: { id: existing.id },
           data: {
             title: buildTitle(scraped),
-            body: scraped.body || existing.body,
+            body: buildBody(scraped) || existing.body,
             url: scraped.url || existing.url,
             sectionIds: cleanSectionIds(scraped.sectionIds),
             publishedAt: publishedAt || existing.publishedAt,
