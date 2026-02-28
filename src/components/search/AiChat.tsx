@@ -564,6 +564,7 @@ export function AiChat({ isPaid, onSubmitRef }: Props) {
 
       {/* Footer: disclaimer + usage meter */}
       <div
+        className="ai-chat-footer"
         style={{
           borderTop: "1px solid var(--border)",
           padding: "8px 24px",
@@ -574,6 +575,13 @@ export function AiChat({ isPaid, onSubmitRef }: Props) {
           flexShrink: 0,
         }}
       >
+        <style>{`
+          @media (max-width: 899px) {
+            .ai-chat-footer {
+              padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 88px) !important;
+            }
+          }
+        `}</style>
         {/* AI disclaimer */}
         <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
           <svg width="12" height="12" fill="none" stroke="var(--text3)" strokeWidth="2" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>

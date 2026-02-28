@@ -394,7 +394,15 @@ RULES:
 6. Keep answers concise but thorough. Aim for 2-4 paragraphs unless the topic requires more detail.
 7. If RELATED CONTENT (videos, articles) is provided, include a "Related Content" section at the end. Use the exact URLs provided for content links — these are the only external links you should use.
 8. When referencing FMCSA Guidance, always note it is advisory, not legally binding.
-9. If FMCSA GUIDANCE AVAILABLE is listed in the context, you MUST include an "## FMCSA Guidance" section in your response that mentions the relevant guidance topics and links to them using [FMCSA Guidance on TOPIC](/regs/SECTION?insights=open) format. This section should briefly describe what additional interpretive detail the guidance covers and note that it is advisory.`;
+9. If FMCSA GUIDANCE AVAILABLE is listed in the context, you MUST include an "## FMCSA Guidance" section in your response that mentions the relevant guidance topics and links to them using [FMCSA Guidance on TOPIC](/regs/SECTION?insights=open) format. This section should briefly describe what additional interpretive detail the guidance covers and note that it is advisory.
+
+CITATION REQUIREMENTS (critical — you MUST follow these):
+10. EVERY specific regulatory claim (a number, threshold, distance, time limit, requirement, or prohibition) MUST be immediately followed by an inline citation in the format [§ SECTION](/regs/SECTION). For example: "Drivers may not drive more than 11 hours [§ 395.3](/regs/395.3)."
+11. You MUST end your answer with a "## Sources" section listing every regulation section you cited, formatted as a bulleted list of links. Example:
+    ## Sources
+    - [§ 395.1 — Scope and applicability](/regs/395.1)
+    - [§ 395.3 — Maximum driving time](/regs/395.3)
+12. If you cannot find a regulation section to cite for a claim, do NOT include that claim. Never state regulatory requirements without a citation.`;
 
 // ── Handler ──────────────────────────────────────────────────────────────────
 
@@ -549,7 +557,7 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "user",
-          content: `${context}${insightContext}${contentContext}\n\nQUESTION: ${question}\n\nIMPORTANT: All specific numbers, distances, hours, and thresholds MUST come from the CURRENT REGULATORY TEXT section above. If the FMCSA GUIDANCE section mentions different numbers, those are outdated — use ONLY the regulatory text values. Use internal links: [§ SECTION](/regs/SECTION) for regulations and [FMCSA Guidance](/regs/SECTION?insights=open) for guidance. Never link to ecfr.gov.`,
+          content: `${context}${insightContext}${contentContext}\n\nQUESTION: ${question}\n\nIMPORTANT REMINDERS:\n- All specific numbers, distances, hours, and thresholds MUST come from the CURRENT REGULATORY TEXT section above. If the FMCSA GUIDANCE section mentions different numbers, those are outdated — use ONLY the regulatory text values.\n- Use internal links: [§ SECTION](/regs/SECTION) for regulations and [FMCSA Guidance](/regs/SECTION?insights=open) for guidance. Never link to ecfr.gov.\n- EVERY regulatory claim MUST have an inline citation like [§ 395.1](/regs/395.1) immediately after it.\n- You MUST end with a "## Sources" section listing all cited regulation sections as links.`,
         },
       ],
     });
