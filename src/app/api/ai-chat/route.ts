@@ -468,11 +468,9 @@ export async function POST(request: NextRequest) {
     // 5. Hybrid search (vector + keyword) with RRF merging
     const rawChunks = await findRelevantChunksHybrid(embedding, question, TOP_K);
 
-    // Separate and re-merge: take all regulation chunks + top guidance
-    const regRaw = rawChunks.filter((c) => c.sourceType === "REGULATION");
-    const guidRaw = rawChunks.filter((c) => c.sourceType !== "REGULATION");
-    const guidanceSlots = Math.max(3, TOP_K - regRaw.length);
-    const chunks = [...regRaw, ...guidRaw.slice(0, guidanceSlots)];
+    // Only use regulation chunks for context — guidance text/titles often
+    // contain outdated numbers. Guidance is surfaced via Insight records only.
+    const chunks = rawChunks.filter((c) => c.sourceType === "REGULATION");
 
     // 6. Look up related insights for cited sections (skip appendix sections)
     const sections = [
@@ -499,16 +497,9 @@ export async function POST(request: NextRequest) {
       }));
     }
 
-    // 7. Build context — ONLY regulation text gets full inclusion.
-    //    Guidance text is excluded from context because it often contains
-    //    outdated numbers (e.g., pre-2020 "100 air miles" vs current "150").
-    //    Instead, guidance is referenced by title only so the model knows
-    //    it exists and can point users to it.
-    const regChunks = chunks.filter((c) => c.sourceType === "REGULATION");
-    const guidanceChunks = chunks.filter((c) => c.sourceType !== "REGULATION");
-
+    // 7. Build context — regulation text only.
     let context = "=== CURRENT REGULATORY TEXT ===\n\n";
-    context += regChunks
+    context += chunks
       .map((c) => {
         const cleanId = cleanSectionId(c.section);
         const label = cleanId ? `§ ${cleanId}` : c.part ? `Part ${c.part}` : "General";
@@ -516,15 +507,9 @@ export async function POST(request: NextRequest) {
       })
       .join("\n\n");
 
-    // Guidance: titles only (no full text — avoids outdated numbers polluting answers)
-    const guidanceTitles = guidanceChunks
-      .map((c) => {
-        const cleanId = cleanSectionId(c.section);
-        return `- "${c.title}" (${cleanId ? `§ ${cleanId}` : "general"})`;
-      })
-      .slice(0, 5);
+    // Guidance: only Insight-level references (NOT embedding chunk titles,
+    // which often contain outdated numbers like "100 air-miles").
     const allInsightTitles = [
-      ...guidanceTitles,
       ...insightRefs.map((i) => `- ${i.type}: "${i.title}" (§ ${i.section})`),
     ];
     // Deduplicate by title
