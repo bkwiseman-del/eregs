@@ -362,8 +362,31 @@ ${contentHtml}
 <script>window.onload=function(){window.print()}<\/script>
 </body></html>`;
 
-    const w = window.open("", "_blank");
-    if (w) { w.document.write(html); w.document.close(); }
+    // Use a hidden iframe for printing — window.open doesn't work in
+    // standalone PWA mode (no browser chrome, can't dismiss the tab).
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "none";
+    iframe.style.left = "-9999px";
+    document.body.appendChild(iframe);
+
+    const iframeDoc = iframe.contentDocument ?? iframe.contentWindow?.document;
+    if (iframeDoc) {
+      // Remove the auto-print script — we'll call print manually
+      const printHtml = html.replace(/<script>window\.onload=function\(\)\{window\.print\(\)\}<\/script>/, "");
+      iframeDoc.open();
+      iframeDoc.write(printHtml);
+      iframeDoc.close();
+
+      // Wait for content to render, then print
+      setTimeout(() => {
+        iframe.contentWindow?.print();
+        // Clean up after print dialog closes
+        setTimeout(() => document.body.removeChild(iframe), 1000);
+      }, 250);
+    }
   }
 
   return (
