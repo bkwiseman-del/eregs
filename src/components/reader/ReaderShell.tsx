@@ -17,6 +17,18 @@ import { Toast } from "./Toast";
 import { ProBanner } from "./ProBanner";
 import { MobileBottomTabs } from "@/components/shared/MobileBottomTabs";
 import { BodyScrollLock } from "@/components/shared/BodyScrollLock";
+import { DownloadAllDialog } from "@/components/shared/DownloadAllDialog";
+import { usePWA } from "@/components/shared/ServiceWorkerProvider";
+import {
+  storePartData,
+  getStoredPartData,
+  putAnnotation as putAnnotationIDB,
+  deleteAnnotation as deleteAnnotationIDB,
+  putAnnotations as putAnnotationsIDB,
+  enqueueSync,
+  getPartCachedAt,
+} from "@/lib/pwa/db";
+import { startSyncListener } from "@/lib/pwa/sync";
 
 // ── DATA STORE ──────────────────────────────────────────────────────────────
 
@@ -84,12 +96,28 @@ async function fetchPartData(part: string, tocOnly = false): Promise<void> {
         ? `/api/reader-data?part=${part}&toc=1`
         : `/api/reader-data?part=${part}`;
       const res = await fetch(url);
-      if (!res.ok) return;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.toc) storePartToc(part, data.toc);
       if (data.sections?.length) storePartSections(part, data.sections);
+
+      // Persist to IndexedDB for offline use (non-blocking)
+      if (!tocOnly && (data.toc || data.sections?.length)) {
+        storePartData({
+          part,
+          toc: data.toc ?? null,
+          sections: data.sections ?? [],
+          meta: data.meta ?? { ecfrVersion: null, cachedAt: null },
+          storedAt: new Date().toISOString(),
+        }).catch(() => {});
+      }
     } catch {
-      // Silent fail — data will be fetched on next attempt
+      // Network error — try IndexedDB fallback
+      const stored = await getStoredPartData(part).catch(() => null);
+      if (stored) {
+        if (stored.toc) storePartToc(part, stored.toc);
+        if (stored.sections?.length) storePartSections(part, stored.sections);
+      }
     } finally {
       inflightFetches.delete(key);
     }
@@ -390,6 +418,8 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   const userRole = (sessionData?.user as any)?.role as string | undefined;
   const isFleet = ["FLEET_MANAGER", "ENTERPRISE_ADMIN", "ENTERPRISE_MANAGER", "INTERNAL"].includes(userRole ?? "");
   const [isAuthed, setIsAuthed] = useState<boolean | null>(null); // null = unknown yet
+  const { isOffline } = usePWA();
+  const [cachedAt, setCachedAt] = useState<string | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -414,6 +444,9 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     localId: string,
     body: Record<string, unknown>,
   ) => {
+    // Persist to IDB immediately
+    putAnnotationIDB({ ...body, id: localId } as ReaderAnnotation).catch(() => {});
+
     try {
       const res = await fetch("/api/annotations", {
         method: "POST",
@@ -424,13 +457,24 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         const data = await res.json();
         if (data.id && data.id !== localId) {
           reconcileId(localId, data.id);
+          // Update IDB with server ID
+          deleteAnnotationIDB(localId).catch(() => {});
+          putAnnotationIDB({ ...body, id: data.id } as ReaderAnnotation).catch(() => {});
         }
         setIsAuthed(true);
       } else if (res.status === 401) {
         setIsAuthed(false);
       }
     } catch {
-      // Offline or network error — annotation stays local
+      // Offline — enqueue for later sync
+      enqueueSync({
+        operation: "CREATE",
+        annotationType: (body.type as "HIGHLIGHT" | "NOTE" | "BOOKMARK"),
+        localId,
+        payload: body,
+        createdAt: new Date().toISOString(),
+        retryCount: 0,
+      }).catch(() => {});
     }
   }, [reconcileId]);
 
@@ -450,7 +494,11 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         // Dedup by ID — local annotations not yet on server keep their local- prefix
         const serverIds = new Set(serverAnnotations.map(a => a.id));
         const unsyncedLocal = localAnnotations.filter(a => !serverIds.has(a.id));
-        setAnnotations([...serverAnnotations, ...unsyncedLocal]);
+        const merged = [...serverAnnotations, ...unsyncedLocal];
+        setAnnotations(merged);
+
+        // Persist server annotations to IDB for offline access
+        putAnnotationsIDB(serverAnnotations).catch(() => {});
 
         for (const local of unsyncedLocal) {
           const body: Record<string, unknown> = {
@@ -467,9 +515,16 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       })
       .catch(() => {
         setIsAuthed(false);
-        setAnnotations(prev => prev.filter(
-          a => a.id.startsWith("local-") || a.section === currentSectionId
-        ));
+        // Offline — try loading annotations from IDB
+        import("@/lib/pwa/db").then(({ getAnnotationsForSection }) => {
+          getAnnotationsForSection(currentSectionId).then(idbAnnotations => {
+            if (idbAnnotations.length > 0) {
+              const localIds = new Set(localAnnotations.map(a => a.id));
+              const unique = idbAnnotations.filter(a => !localIds.has(a.id));
+              setAnnotations([...localAnnotations, ...unique]);
+            }
+          }).catch(() => {});
+        });
       });
   }, [currentSectionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -502,9 +557,16 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       const bookmark = annotations.find(a => a.type === "BOOKMARK" && a.section === currentSectionId);
       if (!bookmark) return;
       setAnnotations(prev => prev.filter(a => a.id !== bookmark.id));
+      deleteAnnotationIDB(bookmark.id).catch(() => {});
       showToast("Bookmark removed");
       if (!bookmark.id.startsWith("local-")) {
-        fetch(`/api/annotations?id=${bookmark.id}&type=BOOKMARK`, { method: "DELETE" }).catch(() => {});
+        fetch(`/api/annotations?id=${bookmark.id}&type=BOOKMARK`, { method: "DELETE" }).catch(() => {
+          enqueueSync({
+            operation: "DELETE", annotationType: "BOOKMARK",
+            serverId: bookmark.id, payload: { id: bookmark.id, type: "BOOKMARK" },
+            createdAt: new Date().toISOString(), retryCount: 0,
+          }).catch(() => {});
+        });
       }
     } else {
       const localId = makeLocalId();
@@ -550,8 +612,15 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       setAnnotations(prev => prev.filter(a => !removeIds.has(a.id)));
 
       for (const anno of toRemove) {
+        deleteAnnotationIDB(anno.id).catch(() => {});
         if (!anno.id.startsWith("local-")) {
-          fetch(`/api/annotations?id=${anno.id}&type=HIGHLIGHT`, { method: "DELETE" }).catch(() => {});
+          fetch(`/api/annotations?id=${anno.id}&type=HIGHLIGHT`, { method: "DELETE" }).catch(() => {
+            enqueueSync({
+              operation: "DELETE", annotationType: "HIGHLIGHT",
+              serverId: anno.id, payload: { id: anno.id, type: "HIGHLIGHT" },
+              createdAt: new Date().toISOString(), retryCount: 0,
+            }).catch(() => {});
+          });
         }
       }
     } else {
@@ -605,6 +674,11 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       ));
       showToast("Note updated");
 
+      // Persist update to IDB
+      putAnnotationIDB({
+        ...editingNote, note: text, updatedAt: new Date().toISOString(),
+      }).catch(() => {});
+
       if (editingNote.id.startsWith("local-")) {
         syncToServer(editingNote.id, {
           type: "NOTE",
@@ -617,7 +691,14 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: editingNote.id, note: text }),
-        }).catch(() => {});
+        }).catch(() => {
+          enqueueSync({
+            operation: "UPDATE", annotationType: "NOTE",
+            serverId: editingNote.id,
+            payload: { id: editingNote.id, note: text },
+            createdAt: new Date().toISOString(), retryCount: 0,
+          }).catch(() => {});
+        });
       }
     } else {
       // Create one Note with all selected paragraph IDs (sorted by document order)
@@ -659,10 +740,17 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
     if (!editingNote) return;
 
     setAnnotations(prev => prev.filter(a => a.id !== editingNote.id));
+    deleteAnnotationIDB(editingNote.id).catch(() => {});
     showToast("Note deleted");
 
     if (!editingNote.id.startsWith("local-")) {
-      fetch(`/api/annotations?id=${editingNote.id}&type=NOTE`, { method: "DELETE" }).catch(() => {});
+      fetch(`/api/annotations?id=${editingNote.id}&type=NOTE`, { method: "DELETE" }).catch(() => {
+        enqueueSync({
+          operation: "DELETE", annotationType: "NOTE",
+          serverId: editingNote.id, payload: { id: editingNote.id, type: "NOTE" },
+          createdAt: new Date().toISOString(), retryCount: 0,
+        }).catch(() => {});
+      });
     }
 
     setEditingNote(null);
@@ -749,9 +837,16 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
   // Delete a single annotation
   const handleDeleteAnnotation = useCallback(async (id: string, type: string) => {
     setAnnotations(prev => prev.filter(a => a.id !== id));
+    deleteAnnotationIDB(id).catch(() => {});
     if (editingNote?.id === id) setEditingNote(null);
     if (!id.startsWith("local-")) {
-      fetch(`/api/annotations?id=${id}&type=${type}`, { method: "DELETE" }).catch(() => {});
+      fetch(`/api/annotations?id=${id}&type=${type}`, { method: "DELETE" }).catch(() => {
+        enqueueSync({
+          operation: "DELETE", annotationType: type as "HIGHLIGHT" | "NOTE" | "BOOKMARK",
+          serverId: id, payload: { id, type },
+          createdAt: new Date().toISOString(), retryCount: 0,
+        }).catch(() => {});
+      });
     }
   }, [editingNote]);
 
@@ -762,6 +857,48 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
         !target.closest(".note-bubble")) {
     }
   }, []);
+
+  // ── PWA: Start sync listener on mount ──────────────────────────────────
+  useEffect(() => {
+    const cleanup = startSyncListener((reconciled) => {
+      setAnnotations(prev =>
+        prev.map(a => {
+          const newId = reconciled.get(a.id);
+          return newId ? { ...a, id: newId } : a;
+        })
+      );
+    });
+    return cleanup;
+  }, []);
+
+  // ── PWA: Track cachedAt for offline display ────────────────────────────
+  useEffect(() => {
+    if (isOffline) {
+      getPartCachedAt(currentPart).then(setCachedAt).catch(() => setCachedAt(null));
+    } else {
+      setCachedAt(null);
+    }
+  }, [currentPart, isOffline]);
+
+  // ── PWA: Download All dialog ────────────────────────────────────────────
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
+  useEffect(() => {
+    const handler = () => setDownloadDialogOpen(true);
+    window.addEventListener("open-download-dialog", handler);
+    return () => window.removeEventListener("open-download-dialog", handler);
+  }, []);
+
+  // ── PWA: Listen for SW cache update messages ───────────────────────────
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === "READER_DATA_UPDATED" && event.data.part === currentPart) {
+        fetchPartData(currentPart).then(() => setStoreRevision(r => r + 1));
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", handler);
+    return () => navigator.serviceWorker.removeEventListener("message", handler);
+  }, [currentPart]);
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
@@ -872,6 +1009,8 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
             onDismissImpact={handleDismissImpact}
             onKeepAnnotation={handleKeepAnnotation}
             onDeleteAnnotation={handleDeleteAnnotation}
+            isOffline={isOffline}
+            cachedAt={cachedAt}
           />
         </main>
 
@@ -913,6 +1052,7 @@ export function ReaderShell({ section: serverSection, toc: serverToc, adjacent: 
       />
 
       <Toast message={toastMsg} visible={toastKey > 0} key={toastKey} />
+      <DownloadAllDialog open={downloadDialogOpen} onClose={() => setDownloadDialogOpen(false)} />
     </div>
   );
 }

@@ -33,6 +33,8 @@ interface Props {
   onDismissImpact?: () => void;
   onKeepAnnotation?: (id: string) => void;
   onDeleteAnnotation?: (id: string, type: string) => void;
+  isOffline?: boolean;
+  cachedAt?: string | null;
 }
 
 function NoteBubble({ annotation, onEdit }: { annotation: ReaderAnnotation; onEdit: () => void }) {
@@ -280,6 +282,7 @@ export function ReaderContent({
   isPro,
   impactedAnnotationCount, onDismissImpact,
   onKeepAnnotation, onDeleteAnnotation,
+  isOffline, cachedAt,
 }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [reviewMode, setReviewMode] = useState(false);
@@ -392,7 +395,31 @@ ${contentHtml}
         padding: "12px 0", borderBottom: "1px solid var(--border)", marginBottom: 32,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text3)" }}>
-          {historicalDate ? (
+          {isOffline && cachedAt ? (
+            <>
+              <span style={{
+                width: 7, height: 7, borderRadius: "50%", background: "#6b7280",
+                display: "inline-block", flexShrink: 0,
+              }} />
+              <span>
+                Viewing cached version as of{" "}
+                <span style={{ fontWeight: 600, color: "var(--text2)" }}>
+                  {new Date(cachedAt).toLocaleDateString("en-US", {
+                    year: "numeric", month: "short", day: "numeric",
+                    hour: "numeric", minute: "2-digit",
+                  })}
+                </span>
+              </span>
+            </>
+          ) : isOffline ? (
+            <>
+              <span style={{
+                width: 7, height: 7, borderRadius: "50%", background: "#ef4444",
+                display: "inline-block", flexShrink: 0,
+              }} />
+              <span style={{ color: "#ef4444" }}>Offline — no cached data for this section</span>
+            </>
+          ) : historicalDate ? (
             <>
               <span style={{
                 width: 7, height: 7, borderRadius: "50%", background: "#f59e0b",
@@ -449,8 +476,8 @@ ${contentHtml}
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {/* History button (Pro only) */}
-          {onSelectHistoricalDate ? (
+          {/* History button (Pro only, hidden when offline) */}
+          {isOffline ? null : onSelectHistoricalDate ? (
             <button
               onClick={() => setHistoryOpen(v => !v)}
               style={{
@@ -487,17 +514,19 @@ ${contentHtml}
             </span>
           )}
 
-          <a
-            href={`https://www.ecfr.gov/current/title-49/section-${section.section}`}
-            target="_blank" rel="noopener noreferrer"
-            style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text3)", textDecoration: "none" }}
-          >
-            eCFR
-            <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-              <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-            </svg>
-          </a>
+          {!isOffline && (
+            <a
+              href={`https://www.ecfr.gov/current/title-49/section-${section.section}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text3)", textDecoration: "none" }}
+            >
+              eCFR
+              <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+                <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            </a>
+          )}
 
           <button
             onClick={() => printSection(section)}

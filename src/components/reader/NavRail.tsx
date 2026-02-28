@@ -115,6 +115,27 @@ export function NavRail({ isPaid = false, isFleet = false, currentSection }: { i
         </>
       )}
 
+      <div style={{ width: 28, height: 1, background: "var(--border)", margin: "4px 0" }} />
+
+      <button
+        onClick={() => window.dispatchEvent(new CustomEvent("open-download-dialog"))}
+        title="Download for offline"
+        style={{
+          width: 44, display: "flex", flexDirection: "column", alignItems: "center",
+          gap: 3, padding: "7px 0", borderRadius: 8, cursor: "pointer",
+          color: "var(--text3)", background: "transparent",
+          border: "none", transition: "all .15s",
+          fontFamily: "'Inter', sans-serif",
+        }}
+      >
+        <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        <span style={{ fontSize: 9, fontWeight: 500 }}>Offline</span>
+      </button>
+
       <div style={{ flex: 1 }} />
     </nav>
   );
