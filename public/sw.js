@@ -41,6 +41,30 @@ self.addEventListener("fetch", (event) => {
   // Skip non-GET
   if (event.request.method !== "GET") return;
 
+  // ── Auth session: network-first, cache fallback (keeps user logged in offline) ──
+  if (url.pathname === "/api/auth/session") {
+    event.respondWith(
+      caches.open(DATA_CACHE).then((cache) =>
+        fetch(event.request)
+          .then((response) => {
+            if (response.ok) cache.put(event.request, response.clone());
+            return response;
+          })
+          .catch(() =>
+            cache.match(event.request).then(
+              (cached) =>
+                cached ||
+                new Response(JSON.stringify({}), {
+                  status: 200,
+                  headers: { "Content-Type": "application/json" },
+                })
+            )
+          )
+      )
+    );
+    return;
+  }
+
   // Skip API routes handled by client IDB or network-only
   if (
     url.pathname.startsWith("/api/annotations") ||
